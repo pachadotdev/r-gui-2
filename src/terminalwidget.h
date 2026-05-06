@@ -21,6 +21,7 @@ public:
     void writeToShell(const QString &text);
     void executeCommand(const QString &command);
     void executeCommandSilent(const QString &command);
+    void executeRCode(const QString &code);
 
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override;

@@ -251,6 +251,30 @@ void TerminalWidget::executeCommand(const QString &command)
     sendText(command + "\n");
 }
 
+// For multi-line code: write to a temp file and source() with echo=TRUE so
+// that R prints each expression with indentation preserved, rather than
+// having readline strip leading whitespace from continuation lines.
+void TerminalWidget::executeRCode(const QString &code)
+{
+    if (!code.contains('\n')) {
+        // Single line — send directly so the prompt feels immediate
+        sendText(code.trimmed() + "\n");
+        return;
+    }
+    QString tmpPath = QDir::tempPath()
+        + QString("/q_run_%1.R").arg(QCoreApplication::applicationPid());
+    QFile f(tmpPath);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&f);
+        out << code;
+        f.close();
+        tmpPath.replace('\\', '/');
+        sendText(QString("source('%1', echo=TRUE, max.deparse.length=Inf)\n").arg(tmpPath));
+    } else {
+        sendText(code + "\n");
+    }
+}
+
 void TerminalWidget::executeCommandSilent(const QString &command)
 {
     // Write the command to a temp file and source() it with echo=FALSE so
