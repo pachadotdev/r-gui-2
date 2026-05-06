@@ -20,6 +20,7 @@ public:
     void setArgs(const QStringList &args);
     void writeToShell(const QString &text);
     void executeCommand(const QString &command);
+    void executeCommandSilent(const QString &command);
 
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override;

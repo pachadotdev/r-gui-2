@@ -73,7 +73,8 @@ EnvironmentPane::~EnvironmentPane()
 void EnvironmentPane::refreshEnvironment()
 {
     if (!terminal) return;
-    terminal->executeCommand("if (requireNamespace('qide', quietly=TRUE)) qide::update_env()");
+    // terminal->executeCommand("if (requireNamespace('qide', quietly=TRUE)) qide::update_env()");
+    terminal->executeCommand("qide::update_env()");
 }
 
 void EnvironmentPane::deleteCheckedItems()
@@ -84,34 +85,19 @@ void EnvironmentPane::deleteCheckedItems()
     for (int i = 0; i < treeWidget->topLevelItemCount(); ++i) {
         QTreeWidgetItem *item = treeWidget->topLevelItem(i);
         if (item->checkState(0) == Qt::Checked) {
-            vars << "\"" + item->text(0) + "\"";
+            vars << item->text(0);
         }
     }
 
     if (vars.isEmpty()) return;
 
-    // Use a safer, silent command sequence
-    // 1. Check existence to avoid warnings
-    // 2. Use invisible() to avoid return value printing
-    // 3. Use local() to avoid polluting the global environment with temporary variables
-    QString cmd = QString(
-        "invisible(local({"
-        "  to_remove <- c(%1);"
-        "  to_remove <- to_remove[to_remove %in% ls(envir = .GlobalEnv)];"
-        "  if (length(to_remove) > 0) rm(list = to_remove, envir = .GlobalEnv);"
-        "  if (requireNamespace('qide', quietly=TRUE)) qide::update_env();"
-        "}))"
-    ).arg(vars.join(", "));
-    
-    terminal->executeCommand(cmd);
+    terminal->executeCommand(QString("rm(%1)").arg(vars.join(", ")));
 }
 
 void EnvironmentPane::clearAllItems()
 {
     if (!terminal) return;
-    
-    QString cmd = "invisible({ rm(list = ls(envir = .GlobalEnv), envir = .GlobalEnv); if (requireNamespace('qide', quietly=TRUE)) qide::update_env() })";
-    terminal->executeCommand(cmd);
+    terminal->executeCommand("rm(list=ls())");
 }
 
 void EnvironmentPane::runGC()

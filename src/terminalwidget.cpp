@@ -251,5 +251,24 @@ void TerminalWidget::executeCommand(const QString &command)
     sendText(command + "\n");
 }
 
+void TerminalWidget::executeCommandSilent(const QString &command)
+{
+    // Write the command to a temp file and source() it with echo=FALSE so
+    // the command text itself is not echoed in the terminal.
+    QString tmpPath = QDir::tempPath() + QString("/q_cmd_%1.R").arg(QCoreApplication::applicationPid());
+    QFile f(tmpPath);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&f);
+        out << command << "\n";
+        f.close();
+        // Forward slashes required for R on all platforms
+        tmpPath.replace('\\', '/');
+        sendText(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\n").arg(tmpPath));
+    } else {
+        // Fallback to normal execution if temp file fails
+        sendText(command + "\n");
+    }
+}
+
 
 
