@@ -266,6 +266,9 @@ void MainWindow::createDockWidgets()
     // Add R console as first tab
     console = new TerminalWidget("R", this);
     consoleTabs->addTab(console, "R Console");
+    // Hide the close button on the R Console tab — it cannot be closed
+    consoleTabs->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
+    consoleTabs->tabBar()->setTabButton(0, QTabBar::LeftSide, nullptr);
     
     // Handle tab close
     connect(consoleTabs, &QTabWidget::tabCloseRequested, this, [this](int index) {
@@ -773,7 +776,7 @@ void MainWindow::runCurrentLine()
     if (!selection.isEmpty()) {
         // If there's a selection, run it
         selection.replace(QChar(0x2029), '\n');
-        console->executeCommand(selection);
+        console->executeRCode(selection);
         return;
     }
     
@@ -796,7 +799,7 @@ void MainWindow::runSelection()
     if (!selection.isEmpty()) {
         // Qt uses Unicode paragraph separator, replace with newline
         selection.replace(QChar(0x2029), '\n');
-        console->executeCommand(selection);
+        console->executeRCode(selection);
     }
 }
 
@@ -807,7 +810,7 @@ void MainWindow::runAll()
     
     QString code = editor->toPlainText();
     if (!code.isEmpty()) {
-        console->executeCommand(code);
+        console->executeRCode(code);
     }
 }
 
