@@ -13,8 +13,6 @@
 #include <QSettings>
 #include <QTextStream>
 #include <QCloseEvent>
-#include <QPushButton>
-#include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QMenu>
 #include <QFileInfo>
@@ -196,6 +194,42 @@ void MainWindow::createMenus()
     connect(themeAct, &QAction::triggered, this, &MainWindow::changeTheme);
     viewMenu->addAction(themeAct);
     
+    // Terminal menu
+    QMenu *terminalMenuBar = menuBar()->addMenu(tr("&Terminal"));
+    struct ShellEntry { QString path; QString label; };
+    QList<ShellEntry> shellCandidates = {
+        {"/bin/zsh",                                                  "zsh"},
+        {"/usr/bin/zsh",                                              "zsh"},
+        {"/bin/bash",                                                 "bash"},
+        {"/usr/bin/bash",                                             "bash"},
+        {"/bin/sh",                                                   "sh"},
+        {"/usr/bin/sh",                                               "sh"},
+        {"/usr/bin/fish",                                             "fish"},
+        {"/bin/fish",                                                 "fish"},
+        {"/opt/homebrew/bin/zsh",                                     "zsh"},
+        {"/usr/local/bin/zsh",                                        "zsh"},
+        {"/usr/bin/pwsh",                                             "PowerShell"},
+        {"/usr/local/bin/pwsh",                                       "PowerShell"},
+        {"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", "PowerShell"},
+        {"C:/Program Files/PowerShell/7/pwsh.exe",                   "PowerShell"},
+        {"C:/msys64/usr/bin/bash.exe",                                "MSYS2 bash"},
+        {"C:/msys64/mingw64/bin/bash.exe",                            "MSYS2 bash"},
+    };
+    QStringList addedLabels;
+    for (const ShellEntry &entry : shellCandidates) {
+        if (QFile::exists(entry.path) && !addedLabels.contains(entry.label)) {
+            QAction *shellAction = terminalMenuBar->addAction(tr("New %1 terminal").arg(entry.label));
+            connect(shellAction, &QAction::triggered, this, [this, entry]() {
+                TerminalWidget *terminal = new TerminalWidget(entry.path, this);
+                int index = consoleTabs->addTab(terminal, entry.label);
+                consoleTabs->setCurrentIndex(index);
+                consoleDock->setVisible(true);
+                consoleDock->raise();
+            });
+            addedLabels << entry.label;
+        }
+    }
+
     // Help menu
     helpMenu = menuBar()->addMenu(tr("&Help"));
     QAction *aboutAct = new QAction(tr("&About"), this);
@@ -206,7 +240,7 @@ void MainWindow::createMenus()
 void MainWindow::createDockWidgets()
 {
     // Console dock with tabs
-    consoleDock = new QDockWidget(tr("Console / Terminals"), this);
+    consoleDock = new QDockWidget(tr("R Console / Terminals"), this);
     consoleDock->setObjectName("consoleDock");
     
     // Create widget to hold tabs and button
@@ -219,45 +253,7 @@ void MainWindow::createDockWidgets()
     consoleTabs = new QTabWidget(this);
     consoleTabs->setTabsClosable(true);
     consoleTabs->setMovable(true);
-    
-    // Create toolbar with dropdown for adding terminals
-    QWidget *toolbarWidget = new QWidget(this);
-    QHBoxLayout *toolbarLayout = new QHBoxLayout(toolbarWidget);
-    toolbarLayout->setContentsMargins(2, 2, 2, 2);
-    
-    // Create dropdown button for terminal selection
-    QPushButton *terminalMenuButton = new QPushButton(tr("+ Terminal"), this);
-    terminalMenuButton->setMaximumWidth(100);
-    
-    QMenu *terminalMenu = new QMenu(this);
-    
-    // Add shell options to menu
-    QStringList shellPaths = {"/bin/bash", "/usr/bin/bash", 
-                               "/bin/zsh", "/usr/bin/zsh",
-                               "/bin/sh", "/usr/bin/sh"};
-    QStringList addedShells;
-    
-    for (const QString &shellPath : shellPaths) {
-        if (QFile::exists(shellPath)) {
-            QString shellName = QFileInfo(shellPath).fileName();
-            if (!addedShells.contains(shellName)) {
-                QAction *shellAction = terminalMenu->addAction(shellName);
-                connect(shellAction, &QAction::triggered, this, [this, shellPath]() {
-                    TerminalWidget *terminal = new TerminalWidget(shellPath, this);
-                    int index = consoleTabs->addTab(terminal, QFileInfo(shellPath).fileName());
-                    consoleTabs->setCurrentIndex(index);
-                });
-                addedShells << shellName;
-            }
-        }
-    }
-    
-    terminalMenuButton->setMenu(terminalMenu);
-    
-    toolbarLayout->addWidget(terminalMenuButton);
-    toolbarLayout->addStretch();
-    
-    consoleLayout->addWidget(toolbarWidget);
+
     consoleLayout->addWidget(consoleTabs);
     
     consoleDock->setWidget(consoleWidget);
