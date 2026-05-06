@@ -3,6 +3,7 @@
 #include "filebrowser.h"
 #include "terminalwidget.h"
 #include "environmentpane.h"
+#include "plotpane.h"
 #include "thememanager.h"
 
 #include <QAction>
@@ -185,6 +186,8 @@ void MainWindow::createMenus()
     viewMenu->addAction(scriptDock->toggleViewAction());
     viewMenu->addAction(consoleDock->toggleViewAction());
     viewMenu->addAction(filesDock->toggleViewAction());
+    viewMenu->addAction(envDock->toggleViewAction());
+    viewMenu->addAction(plotDock->toggleViewAction());
     
     viewMenu->addSeparator();
     
@@ -289,6 +292,18 @@ void MainWindow::createDockWidgets()
     addDockWidget(Qt::RightDockWidgetArea, envDock);
     tabifyDockWidget(filesDock, envDock);
     setTabPosition(Qt::RightDockWidgetArea, QTabWidget::North);
+
+    // Plot dock
+    QString plotDir = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                          .filePath("q_plots");
+    plotDock = new QDockWidget(tr("Plots"), this);
+    plotDock->setObjectName("plotDock");
+    plotPane = new PlotPane(plotDir, this);
+    plotDock->setWidget(plotPane);
+    addDockWidget(Qt::RightDockWidgetArea, plotDock);
+    tabifyDockWidget(envDock, plotDock);
+    // Start with Files tab raised
+    filesDock->raise();
 }
 
 void MainWindow::setupConnections()
@@ -369,9 +384,12 @@ void MainWindow::loadSettings()
         // This ensures they take 100% of the right column height
         addDockWidget(Qt::RightDockWidgetArea, filesDock);
         addDockWidget(Qt::RightDockWidgetArea, envDock);
+        addDockWidget(Qt::RightDockWidgetArea, plotDock);
         tabifyDockWidget(filesDock, envDock);
+        tabifyDockWidget(envDock, plotDock);
         filesDock->setVisible(true);
         envDock->setVisible(true);
+        plotDock->setVisible(true);
         // Raise files dock to be the active tab
         filesDock->raise();
 
@@ -453,6 +471,7 @@ void MainWindow::setDefaultLayoutSizes()
         if (consoleDock) consoleDock->installEventFilter(this);
         if (filesDock) filesDock->installEventFilter(this);
         if (envDock) envDock->installEventFilter(this);
+        if (plotDock) plotDock->installEventFilter(this);
         if (editorTabs) editorTabs->installEventFilter(this);
         
         // Also install on splitters to catch their resize events

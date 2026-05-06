@@ -49,6 +49,8 @@ set(SOURCES
     src/terminalwidget.h
     src/environmentpane.cpp
     src/environmentpane.h
+    src/plotpane.cpp
+    src/plotpane.h
 )
 
 # Create executable

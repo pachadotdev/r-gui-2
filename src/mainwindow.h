@@ -16,6 +16,7 @@ class CodeEditor;
 class FileBrowser;
 class TerminalWidget;
 class EnvironmentPane;
+class PlotPane;
 
 class MainWindow : public QMainWindow
 {
@@ -57,6 +58,7 @@ private:
     QDockWidget *consoleDock;
     QDockWidget *filesDock;
     QDockWidget *envDock;
+    QDockWidget *plotDock;
     
     // Console tabs
     QTabWidget *consoleTabs;
@@ -65,6 +67,7 @@ private:
     TerminalWidget *console;
     FileBrowser *fileBrowser;
     EnvironmentPane *envPane;
+    PlotPane *plotPane;
     
     // Menus
     QMenu *fileMenu;
