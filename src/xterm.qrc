@@ -2,6 +2,7 @@
   <qresource prefix="/xterm">
     <file alias="xterm.js">xterm/xterm.js</file>
     <file alias="xterm.css">xterm/xterm.css</file>
+    <file alias="addon-fit.js">xterm/addon-fit.js</file>
     <file alias="terminal.html">xterm/terminal.html</file>
   </qresource>
 </RCC>

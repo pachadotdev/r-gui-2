@@ -128,7 +128,7 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "  }\n"
         << "  if (requireNamespace('qide', quietly=TRUE)) {\n"
         << "    library(qide)\n"
-        << "    qide::init_monitor(file.path(tempdir(), 'q_env.json'))\n"
+        << "    qide::init_monitor(Sys.getenv('Q_ENV_FILE', unset='/tmp/q_env.json'))\n"
         << "  }\n"
         << "\n"
         << "  # ── Q plot capture ────────────────────────────────────────────────────\n"
@@ -183,6 +183,7 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         env << "Q_ORIGINAL_R_PROFILE_USER=" + origProf;
     env << "R_PROFILE_USER=" + initPath;
     env << "Q_PLOT_DIR=" + plotDir;
+    env << "Q_ENV_FILE=" + QDir::tempPath() + "/q_env.json";
     return initPath;
 }
 
@@ -193,26 +194,20 @@ void TerminalBridge::sendInput(const QString &data)
     if (tw) tw->writeToPty(data.toUtf8());
 }
 
+void TerminalBridge::resizePty(int cols, int rows)
+{
+    if (tw) tw->doResize(cols, rows);
+}
+
 void TerminalBridge::ready()
 {
     if (!tw || tw->ptyStarted) return;
     tw->ptyStarted = true;
 
-    // Compute initial terminal dimensions from the widget's current pixel size.
-    QFont font;
-    font.setFamily("Hack Nerd Font Mono");
-    font.setPointSize(10);
-    QFontMetrics fm(font);
-    int charW = qMax(1, fm.horizontalAdvance('M'));
-    int charH = qMax(1, fm.height());
-    int cols  = qMax(10, tw->width()  / charW);
-    int rows  = qMax(3,  tw->height() / charH);
-
-    // Resize xterm.js to match, then start the PTY at that size.
-    tw->page()->runJavaScript(
-        QString("if(window.termResize) window.termResize(%1, %2);").arg(cols).arg(rows));
+    // Start the PTY with a default 80×24 size.
+    // JS will call resizePty() with the actual FitAddon-measured dimensions immediately after.
     tw->startPty();
-    tw->doResize(cols, rows);
+    tw->doResize(80, 24);
 
     // Apply the current editor theme.
     tw->setTheme(tw->currentTheme);
@@ -271,6 +266,8 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
     // On Windows the child inherits the parent's environment via CreateProcess.
     // We set needed variables directly in the parent before spawning.
     SetEnvironmentVariableW(L"Q_PLOT_DIR", plotDir.toStdWString().c_str());
+    SetEnvironmentVariableW(L"Q_ENV_FILE",
+        (QDir::tempPath() + "/q_env.json").toStdWString().c_str());
     {
         QString base = QFileInfo(shellPath).baseName().toLower();
         if (base == "r" || base == "rterm") {
@@ -449,6 +446,15 @@ void TerminalWidget::startPty()
     }
     envp << nullptr;
 
+    // Resolve to absolute path so execve can find the binary (it doesn't search PATH).
+    QString resolvedPath = shellPath;
+    if (!QFileInfo(shellPath).isAbsolute()) {
+        QString found = QStandardPaths::findExecutable(shellPath);
+        if (!found.isEmpty()) resolvedPath = found;
+    }
+    QByteArray resolvedBuf = resolvedPath.toLocal8Bit();
+    argv[0] = resolvedBuf.constData();
+
     shellPid = forkpty(&ptyFd, nullptr, nullptr, &ws);
     if (shellPid == 0) {
         // Child: change to home dir and exec the shell.
@@ -529,19 +535,9 @@ void TerminalWidget::resizeEvent(QResizeEvent *event)
 
     if (!ptyStarted) return;  // don't resize before PTY exists
 
-    QFont font;
-    font.setFamily("Hack Nerd Font Mono");
-    font.setPointSize(10);
-    QFontMetrics fm(font);
-    int charW = qMax(1, fm.horizontalAdvance('M'));
-    int charH = qMax(1, fm.height());
-    int cols  = qMax(10, event->size().width()  / charW);
-    int rows  = qMax(3,  event->size().height() / charH);
-
-    // Keep xterm.js and PTY in sync.
-    page()->runJavaScript(
-        QString("if(window.termResize) window.termResize(%1, %2);").arg(cols).arg(rows));
-    doResize(cols, rows);
+    // Let FitAddon measure actual character dimensions and compute cols/rows.
+    // It calls bridge.resizePty(cols, rows) which updates the PTY.
+    page()->runJavaScript("if(window.fitTerminal) window.fitTerminal();");
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

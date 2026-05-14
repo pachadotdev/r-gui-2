@@ -7,10 +7,8 @@
 #include <QPushButton>
 #include <QFileSystemWatcher>
 #include <QPixmap>
-#include <QStringList>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
-#include <QComboBox>
 #include <QTimer>
 
 class PlotPane : public QWidget
@@ -26,40 +24,35 @@ public:
 public slots:
     void refresh();
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private slots:
     void onIndexFileChanged(const QString &path);
-    void showPrevious();
-    void showNext();
     void zoomIn();
     void zoomOut();
     void zoomFit();
-    void onPlotListChanged(int index);
 
 private:
     void loadPlot(const QString &filePath);
-    void updateNavButtons();
     void applyZoom();
 
     QString m_plotDir;
     QString m_indexFile;
+    QString m_currentFile;
 
-    QScrollArea *m_scrollArea;
-    QLabel *m_imageLabel;
-    QPushButton *m_prevBtn;
-    QPushButton *m_nextBtn;
-    QPushButton *m_zoomInBtn;
-    QPushButton *m_zoomOutBtn;
-    QPushButton *m_zoomFitBtn;
-    QComboBox *m_plotList;
-    QLabel *m_statusLabel;
+    QScrollArea  *m_scrollArea;
+    QLabel       *m_imageLabel;
+    QPushButton  *m_zoomInBtn;
+    QPushButton  *m_zoomOutBtn;
+    QPushButton  *m_zoomFitBtn;
 
     QFileSystemWatcher *m_watcher;
-    QTimer *m_reloadTimer;
+    QTimer             *m_reloadTimer;
 
-    QStringList m_plotFiles;   // ordered list of captured plot file paths
-    int m_currentIndex;        // index into m_plotFiles
-    double m_zoomFactor;
-    QPixmap m_currentPixmap;   // unscaled pixmap
+    double  m_zoomFactor  = 1.0;
+    bool    m_userZoomed  = false;   // true once user manually zoomed
+    QPixmap m_currentPixmap;
 };
 
 #endif // PLOTPANE_H
