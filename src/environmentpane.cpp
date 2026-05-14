@@ -55,9 +55,10 @@ EnvironmentPane::EnvironmentPane(TerminalWidget *terminal, QWidget *parent)
     // Ensure file exists so watcher can watch it
     QFile f(envFilePath);
     if (!f.exists()) {
-        f.open(QIODevice::WriteOnly);
-        f.write("{}");
-        f.close();
+        if (f.open(QIODevice::WriteOnly)) {
+            f.write("{}");
+            f.close();
+        }
     }
     
     fileWatcher = new QFileSystemWatcher(this);

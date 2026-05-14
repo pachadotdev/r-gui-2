@@ -9,10 +9,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Find Qt6
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Network)
-
-# Find qtermwidget6
-find_package(qtermwidget6 REQUIRED)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Network WebEngineWidgets WebChannel)
 
 # Find R
 find_program(R_EXECUTABLE R)
@@ -45,8 +42,9 @@ set(SOURCES
     src/filebrowser.h
     src/thememanager.cpp
     src/thememanager.h
-    src/terminalwidget.cpp
     src/terminalwidget.h
+    src/terminalwidget.cpp   # xterm.js-based, unified for all platforms
+    src/xterm.qrc            # bundles xterm.js, xterm.css, terminal.html
     src/environmentpane.cpp
     src/environmentpane.h
     src/plotpane.cpp
@@ -56,17 +54,20 @@ set(SOURCES
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-# Link Qt libraries and qtermwidget
+# Link Qt libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Core
     Qt6::Widgets
     Qt6::Gui
     Qt6::Network
+    Qt6::WebEngineWidgets
+    Qt6::WebChannel
 )
 
-# Link qtermwidget6
-target_link_libraries(${PROJECT_NAME} PRIVATE qtermwidget6)
-target_include_directories(${PROJECT_NAME} PRIVATE ${qtermwidget6_INCLUDE_DIRS})
+# Link platform PTY library (POSIX only)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE util)  # for forkpty on Linux
+endif()
 
 # Set output directory
 set_target_properties(${PROJECT_NAME} PROPERTIES

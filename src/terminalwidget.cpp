@@ -1,298 +1,638 @@
+// terminalwidget.cpp  –  xterm.js-based terminal for all platforms.
+// PTY backend: POSIX forkpty on Linux/macOS, ConPTY on Windows.
+
 #include "terminalwidget.h"
-#include <QDir>
-#include <QFileInfo>
+
 #include <QApplication>
 #include <QClipboard>
 #include <QContextMenuEvent>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QFontMetrics>
+#include <QMenu>
 #include <QProcessEnvironment>
+#include <QResizeEvent>
 #include <QStandardPaths>
 #include <QTextStream>
-#include <QRegularExpression>
+#include <QThread>
+#include <QWebEnginePage>
+#include <QWebEngineSettings>
+#include <atomic>
 
-TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
-    : QTermWidget(0, parent)
-    , shellPath(shell)
+// ── Platform-specific headers ─────────────────────────────────────────────────
+
+#ifdef Q_OS_WIN
+#  define WIN32_LEAN_AND_MEAN
+#  define NOMINMAX
+#  include <windows.h>
+#  include <consoleapi.h>
+#  include <processthreadsapi.h>
+#  include <QProcess>
+#else
+#  include <unistd.h>
+#  include <fcntl.h>
+#  include <signal.h>
+#  include <sys/ioctl.h>
+#  include <sys/wait.h>
+#  ifdef Q_OS_MACOS
+#    include <util.h>
+#  else
+#    include <pty.h>
+#  endif
+#endif
+
+// ── ConPtyImpl (Windows only) ─────────────────────────────────────────────────
+
+#ifdef Q_OS_WIN
+struct TerminalWidget::ConPtyImpl {
+    HPCON  hPCon    = nullptr;
+    HANDLE hPtyIn   = INVALID_HANDLE_VALUE;  // we write  → shell stdin
+    HANDLE hPtyOut  = INVALID_HANDLE_VALUE;  // we read   ← shell stdout/err
+    HANDLE hProcess = INVALID_HANDLE_VALUE;
+    HANDLE hThread  = INVALID_HANDLE_VALUE;
+    int    cols = 80;
+    int    rows = 24;
+};
+#endif
+
+// ── PtyReaderThread ───────────────────────────────────────────────────────────
+// Reads raw bytes from the PTY and emits them; platform-specific handle type.
+
+class PtyReaderThread : public QThread {
+    Q_OBJECT
+public:
+#ifdef Q_OS_WIN
+    explicit PtyReaderThread(HANDLE h, QObject *parent = nullptr)
+        : QThread(parent), handle(h) {}
+#else
+    explicit PtyReaderThread(int fd, QObject *parent = nullptr)
+        : QThread(parent), fd(fd) {}
+#endif
+
+    void requestStop() { stopped.store(true); }
+
+signals:
+    void dataReady(QByteArray data);
+
+protected:
+    void run() override {
+        char buf[4096];
+#ifdef Q_OS_WIN
+        DWORD n = 0;
+        while (!stopped.load()) {
+            if (!ReadFile(handle, buf, sizeof(buf), &n, nullptr) || n == 0)
+                break;
+            emit dataReady(QByteArray(buf, static_cast<int>(n)));
+        }
+#else
+        while (!stopped.load()) {
+            ssize_t n = ::read(fd, buf, sizeof(buf));
+            if (n <= 0) break;
+            emit dataReady(QByteArray(buf, static_cast<int>(n)));
+        }
+#endif
+    }
+
+private:
+#ifdef Q_OS_WIN
+    HANDLE handle;
+#else
+    int fd;
+#endif
+    std::atomic<bool> stopped{false};
+};
+
+// ── Shared R init-script helper ───────────────────────────────────────────────
+// Writes the R profile init script and populates env list entries.
+
+static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
+                         const QString &plotDir)
 {
-    // Get current theme
-    currentTheme = ThemeManager::instance().currentTheme();
-    
-    // Set font to Hack Nerd Font Mono for Powerline/icon support
-    // Note: qtermwidget may show a "variable-width font" warning due to how it checks
-    // font metrics with Nerd Fonts' extra glyphs, but the font works correctly
+    QString pid      = QString::number(QCoreApplication::applicationPid());
+    QString initPath = QDir::tempPath() + "/q_init_" + pid + ".R";
+    QFile f(initPath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+        return {};
+
+    QTextStream out(&f);
+    out << "local({\n"
+        << "  orig_prof <- Sys.getenv('Q_ORIGINAL_R_PROFILE_USER')\n"
+        << "  if (nzchar(orig_prof) && file.exists(orig_prof)) {\n"
+        << "    source(orig_prof)\n"
+        << "  } else {\n"
+        << "    if (file.exists('.Rprofile')) source('.Rprofile')\n"
+        << "    else if (file.exists(file.path(Sys.getenv('HOME'), '.Rprofile')))\n"
+        << "      source(file.path(Sys.getenv('HOME'), '.Rprofile'))\n"
+        << "  }\n"
+        << "  if (requireNamespace('qide', quietly=TRUE)) {\n"
+        << "    library(qide)\n"
+        << "    qide::init_monitor(file.path(tempdir(), 'q_env.json'))\n"
+        << "  }\n"
+        << "\n"
+        << "  # ── Q plot capture ────────────────────────────────────────────────────\n"
+        << "  local({\n"
+        << "    plot_dir <- Sys.getenv('Q_PLOT_DIR', unset = file.path(tempdir(), 'q_plots'))\n"
+        << "    dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)\n"
+        << "    index_file <- file.path(plot_dir, 'q_plot_index.txt')\n"
+        << "    dev_counter  <- 0L\n"
+        << "    snap_counter <- 0L\n"
+        << "    last_snap_size <- -1L\n"
+        << "\n"
+        << "    options(device = function(width = 7, height = 5, ...) {\n"
+        << "      dev_counter <<- dev_counter + 1L\n"
+        << "      fname <- file.path(plot_dir, sprintf('q_dev_%06d.png', dev_counter))\n"
+        << "      grDevices::png(fname,\n"
+        << "                     width  = round(width  * 96),\n"
+        << "                     height = round(height * 96),\n"
+        << "                     res    = 96, ...)\n"
+        << "      grDevices::dev.control(displaylist = 'enable')\n"
+        << "      invisible(NULL)\n"
+        << "    })\n"
+        << "\n"
+        << "    addTaskCallback(function(expr, value, ok, visible) {\n"
+        << "      if (grDevices::dev.cur() != 1L) {\n"
+        << "        tryCatch({\n"
+        << "          recorded <- grDevices::recordPlot()\n"
+        << "          if (length(recorded[[1]]) > 0L) {\n"
+        << "            curr_file <- file.path(plot_dir, 'q_current.png')\n"
+        << "            grDevices::png(curr_file, width=800L, height=600L, res=96L)\n"
+        << "            grDevices::replayPlot(recorded)\n"
+        << "            grDevices::dev.off()\n"
+        << "            new_size <- file.size(curr_file)\n"
+        << "            if (!identical(new_size, last_snap_size)) {\n"
+        << "              last_snap_size <<- new_size\n"
+        << "              snap_counter <<- snap_counter + 1L\n"
+        << "              snap_file <- file.path(plot_dir,\n"
+        << "                                     sprintf('q_snap_%06d.png', snap_counter))\n"
+        << "              file.copy(curr_file, snap_file, overwrite = TRUE)\n"
+        << "              writeLines(snap_file, index_file)\n"
+        << "            }\n"
+        << "          }\n"
+        << "        }, error = function(e) NULL)\n"
+        << "      }\n"
+        << "      TRUE\n"
+        << "    }, name = 'q_plot_capture')\n"
+        << "  })\n"
+        << "})\n";
+    f.close();
+
+    QString origProf = sysEnv.value("R_PROFILE_USER");
+    if (!origProf.isEmpty())
+        env << "Q_ORIGINAL_R_PROFILE_USER=" + origProf;
+    env << "R_PROFILE_USER=" + initPath;
+    env << "Q_PLOT_DIR=" + plotDir;
+    return initPath;
+}
+
+// ── TerminalBridge implementation ─────────────────────────────────────────────
+
+void TerminalBridge::sendInput(const QString &data)
+{
+    if (tw) tw->writeToPty(data.toUtf8());
+}
+
+void TerminalBridge::ready()
+{
+    if (!tw || tw->ptyStarted) return;
+    tw->ptyStarted = true;
+
+    // Compute initial terminal dimensions from the widget's current pixel size.
     QFont font;
     font.setFamily("Hack Nerd Font Mono");
     font.setPointSize(10);
-    font.setStyleHint(QFont::Monospace);
-    font.setFixedPitch(true);
-    setTerminalFont(font);
-    
-    // Set terminal size hint
-    setTerminalSizeHint(false);
-    
-    // Enable scroll on output
-    setScrollBarPosition(QTermWidget::ScrollBarRight);
-    
-    // Set color scheme based on theme
-    setTheme(currentTheme);
-    
-    // Setup copy/paste shortcuts using QShortcut (more reliable than keyPressEvent)
-    copyShortcut = new QShortcut(QKeySequence("Ctrl+Shift+C"), this);
-    connect(copyShortcut, &QShortcut::activated, this, &QTermWidget::copyClipboard);
-    
-    pasteShortcut = new QShortcut(QKeySequence("Ctrl+Shift+V"), this);
-    connect(pasteShortcut, &QShortcut::activated, this, &QTermWidget::pasteClipboard);
-    
-    // Set shell if provided
+    QFontMetrics fm(font);
+    int charW = qMax(1, fm.horizontalAdvance('M'));
+    int charH = qMax(1, fm.height());
+    int cols  = qMax(10, tw->width()  / charW);
+    int rows  = qMax(3,  tw->height() / charH);
+
+    // Resize xterm.js to match, then start the PTY at that size.
+    tw->page()->runJavaScript(
+        QString("if(window.termResize) window.termResize(%1, %2);").arg(cols).arg(rows));
+    tw->startPty();
+    tw->doResize(cols, rows);
+
+    // Apply the current editor theme.
+    tw->setTheme(tw->currentTheme);
+}
+
+// ── Constructor ───────────────────────────────────────────────────────────────
+
+TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
+    : QWebEngineView(parent)
+{
+    currentTheme = ThemeManager::instance().currentTheme();
+
+    // ── Resolve shell path ──────────────────────────────────────────────────
+#ifdef Q_OS_WIN
+    if (!shell.isEmpty() && shell != "R" && shell != "r") {
+        shellPath = shell;
+    } else if (shell == "R" || shell == "r") {
+        QString rHome = QString::fromLocal8Bit(qgetenv("R_HOME"));
+        QString rterm;
+        if (!rHome.isEmpty())
+            rterm = rHome + "/bin/x64/Rterm.exe";
+        if (rterm.isEmpty() || !QFileInfo::exists(rterm))
+            rterm = QStandardPaths::findExecutable("Rterm");
+        if (rterm.isEmpty() || !QFileInfo::exists(rterm)) {
+            QProcess probe;
+            probe.start("R", {"--slave", "-e", "cat(R.home('bin'))"});
+            if (probe.waitForFinished(3000)) {
+                QString binDir =
+                    QString::fromLocal8Bit(probe.readAllStandardOutput()).trimmed();
+                rterm = binDir + "/Rterm.exe";
+            }
+        }
+        shellPath = QFileInfo::exists(rterm) ? rterm : "Rterm.exe";
+    } else {
+        QString pwsh = QStandardPaths::findExecutable("pwsh");
+        shellPath = pwsh.isEmpty() ? QStandardPaths::findExecutable("powershell") : pwsh;
+        if (shellPath.isEmpty()) shellPath = "powershell.exe";
+    }
+#else
     if (!shell.isEmpty()) {
         shellPath = shell;
-        setShellProgram(shell);
-        
-        // Check if this is R and set appropriate arguments
-        QString shellName = QFileInfo(shell).fileName().toLower();
-        if (shellName == "r") {
-            QStringList rArgs;
-            rArgs << "--interactive" << "--no-save";
-            QTermWidget::setArgs(rArgs);
-        }
+        if (QFileInfo(shell).fileName().toLower() == "r")
+            shellArgs << "--interactive" << "--no-save";
     } else {
-        // Use system default shell
-        QString defaultShell = qgetenv("SHELL");
-        if (defaultShell.isEmpty()) {
-            defaultShell = "/bin/bash";
-        }
-        shellPath = defaultShell;
-        setShellProgram(defaultShell);
+        shellPath = QString::fromLocal8Bit(qgetenv("SHELL"));
+        if (shellPath.isEmpty()) shellPath = "/bin/bash";
     }
-    
-    // Set environment variables for proper UTF-8 support
-    QProcessEnvironment sysEnv = QProcessEnvironment::systemEnvironment();
-    QStringList env;
-    
-    // Convert system environment to string list, skipping locale vars we'll override
-    for (const QString &key : sysEnv.keys()) {
-        if (key != "LANG" && key != "LC_ALL" && key != "TERM" && key != "R_PROFILE_USER") {
-            env << QString("%1=%2").arg(key, sysEnv.value(key));
-        }
-    }
-    
-    // Add UTF-8 locale settings
-    env << "LANG=en_US.UTF-8";
-    env << "LC_ALL=en_US.UTF-8";
-    env << "TERM=xterm-256color";
+#endif
 
-    // Tell R where to write plot snapshots (must match the path PlotPane watches)
-    QString qPlotDir = QDir::tempPath() + "/q_plots";
-    env << "Q_PLOT_DIR=" + qPlotDir;
-    
-    // Setup R profile for silent loading
-    QString shellName = QFileInfo(shellPath).fileName().toLower();
-    if (shellName == "r") {
-        QString initScriptPath = QDir::tempPath() + "/q_init_" + QString::number(QCoreApplication::applicationPid()) + ".R";
-        QFile initScript(initScriptPath);
-        if (initScript.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream out(&initScript);
-            out << "local({\n";
-            out << "  orig_prof <- Sys.getenv('Q_ORIGINAL_R_PROFILE_USER')\n";
-            out << "  if (nzchar(orig_prof) && file.exists(orig_prof)) {\n";
-            out << "    source(orig_prof)\n";
-            out << "  } else {\n";
-            out << "    if (file.exists('.Rprofile')) source('.Rprofile')\n";
-            out << "    else if (file.exists(file.path(Sys.getenv('HOME'), '.Rprofile'))) source(file.path(Sys.getenv('HOME'), '.Rprofile'))\n";
-            out << "  }\n";
-            out << "  if (requireNamespace('qide', quietly=TRUE)) {\n";
-            out << "    library(qide)\n";
-            out << "    qide::init_monitor('/tmp/q_env.json')\n";
-            out << "  }\n";
-            out << "\n";
-            out << "  # ── Q plot capture ────────────────────────────────────────────────────\n";
-            out << "  local({\n";
-            out << "    plot_dir <- Sys.getenv('Q_PLOT_DIR', unset = file.path(tempdir(), 'q_plots'))\n";
-            out << "    dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)\n";
-            out << "    index_file <- file.path(plot_dir, 'q_plot_index.txt')\n";
-            out << "    dev_counter  <- 0L\n";
-            out << "    snap_counter <- 0L\n";
-            out << "    last_snap_size <- -1L\n";
-            out << "\n";
-            out << "    # Override the default device so plots never open an X11 window.\n";
-            out << "    # width/height arrive in inches; convert to pixels at 96 dpi.\n";
-            out << "    # Enable the display list so recordPlot() can capture the state later.\n";
-            out << "    options(device = function(width = 7, height = 5, ...) {\n";
-            out << "      dev_counter <<- dev_counter + 1L\n";
-            out << "      fname <- file.path(plot_dir, sprintf('q_dev_%06d.png', dev_counter))\n";
-            out << "      grDevices::png(fname,\n";
-            out << "                     width  = round(width  * 96),\n";
-            out << "                     height = round(height * 96),\n";
-            out << "                     res    = 96, ...)\n";
-            out << "      grDevices::dev.control(displaylist = 'enable')\n";
-            out << "      invisible(NULL)\n";
-            out << "    })\n";
-            out << "\n";
-            out << "    # After every top-level expression: snapshot if a device is open.\n";
-            out << "    # We always write q_current.png, then compare its file size against\n";
-            out << "    # the previous snapshot to detect actual plot changes.  This avoids\n";
-            out << "    # the display-list-length false-negative (two different plots with the\n";
-            out << "    # same number of primitives) that plagued the old approach.\n";
-            out << "    addTaskCallback(function(expr, value, ok, visible) {\n";
-            out << "      if (grDevices::dev.cur() != 1L) {\n";
-            out << "        tryCatch({\n";
-            out << "          recorded <- grDevices::recordPlot()\n";
-            out << "          if (length(recorded[[1]]) > 0L) {\n";
-            out << "            curr_file <- file.path(plot_dir, 'q_current.png')\n";
-            out << "            grDevices::png(curr_file, width=800L, height=600L, res=96L)\n";
-            out << "            grDevices::replayPlot(recorded)\n";
-            out << "            grDevices::dev.off()\n";
-            out << "            new_size <- file.size(curr_file)\n";
-            out << "            if (!identical(new_size, last_snap_size)) {\n";
-            out << "              last_snap_size <<- new_size\n";
-            out << "              snap_counter <<- snap_counter + 1L\n";
-            out << "              snap_file <- file.path(plot_dir,\n";
-            out << "                                     sprintf('q_snap_%06d.png', snap_counter))\n";
-            out << "              file.copy(curr_file, snap_file, overwrite = TRUE)\n";
-            out << "              writeLines(snap_file, index_file)\n";
-            out << "            }\n";
-            out << "          }\n";
-            out << "        }, error = function(e) NULL)\n";
-            out << "      }\n";
-            out << "      TRUE\n";
-            out << "    }, name = 'q_plot_capture')\n";
-            out << "  })\n";
-            out << "})\n";
-            initScript.close();
-            
-            QString originalProfile = sysEnv.value("R_PROFILE_USER");
-            if (!originalProfile.isEmpty()) {
-                env << "Q_ORIGINAL_R_PROFILE_USER=" + originalProfile;
+    // ── Build child environment ─────────────────────────────────────────────
+    QProcessEnvironment sysEnv = QProcessEnvironment::systemEnvironment();
+    QString plotDir = QDir::tempPath() + "/q_plots";
+    QDir().mkpath(plotDir);
+
+#ifdef Q_OS_WIN
+    // On Windows the child inherits the parent's environment via CreateProcess.
+    // We set needed variables directly in the parent before spawning.
+    SetEnvironmentVariableW(L"Q_PLOT_DIR", plotDir.toStdWString().c_str());
+    {
+        QString base = QFileInfo(shellPath).baseName().toLower();
+        if (base == "r" || base == "rterm") {
+            QStringList dummy;
+            QString initPath = setupREnv(dummy, sysEnv, plotDir);
+            if (!initPath.isEmpty()) {
+                QString orig = sysEnv.value("R_PROFILE_USER");
+                if (!orig.isEmpty())
+                    SetEnvironmentVariableW(L"Q_ORIGINAL_R_PROFILE_USER",
+                                            orig.toStdWString().c_str());
+                SetEnvironmentVariableW(L"R_PROFILE_USER",
+                                        initPath.toStdWString().c_str());
             }
-            env << "R_PROFILE_USER=" + initScriptPath;
         }
     }
-    
-    setEnvironment(env);
-    
-    // Set working directory to user's home
-    setWorkingDirectory(QDir::homePath());
-    
-    // Set key bindings (default should work, but we can customize if needed)
-    setKeyBindings("default");
-    
-    // Disable bracketed paste mode to avoid ^[[200~ sequences when pasting
-    disableBracketedPasteMode(true);
-    
-    // Start the shell
-    startShellProgram();
+#else
+    // Build an explicit envp for execve.
+    for (const QString &key : sysEnv.keys()) {
+        if (key != "LANG" && key != "LC_ALL" && key != "TERM" && key != "R_PROFILE_USER")
+            envList << key + "=" + sysEnv.value(key);
+    }
+    envList << "LANG=en_US.UTF-8"
+            << "LC_ALL=en_US.UTF-8"
+            << "TERM=xterm-256color"
+            << "Q_PLOT_DIR=" + plotDir;
+
+    if (QFileInfo(shellPath).fileName().toLower() == "r")
+        setupREnv(envList, sysEnv, plotDir);
+#endif
+
+    // ── Set up QWebChannel ──────────────────────────────────────────────────
+    channel = new QWebChannel(this);
+    bridge  = new TerminalBridge(this);
+    bridge->tw = this;
+    channel->registerObject(QStringLiteral("bridge"), bridge);
+    page()->setWebChannel(channel);
+
+    // ── Load the xterm.js terminal page ────────────────────────────────────
+    // PTY is started when xterm.js calls bridge.ready() after QWebChannel init.
+    page()->load(QUrl(QStringLiteral("qrc:///xterm/terminal.html")));
 }
+
+// ── Destructor ────────────────────────────────────────────────────────────────
 
 TerminalWidget::~TerminalWidget()
 {
-    // QTermWidget handles cleanup
+#ifdef Q_OS_WIN
+    if (!pty) return;
+    if (pty->hProcess != INVALID_HANDLE_VALUE) {
+        TerminateProcess(pty->hProcess, 0);
+        WaitForSingleObject(pty->hProcess, 1000);
+        CloseHandle(pty->hProcess);
+    }
+    if (pty->hThread  != INVALID_HANDLE_VALUE) CloseHandle(pty->hThread);
+    if (pty->hPCon)                             ClosePseudoConsole(pty->hPCon);
+    if (pty->hPtyIn   != INVALID_HANDLE_VALUE)  CloseHandle(pty->hPtyIn);
+    if (pty->hPtyOut  != INVALID_HANDLE_VALUE)  CloseHandle(pty->hPtyOut);
+    delete pty;
+#else
+    if (ptyReader) {
+        ptyReader->requestStop();
+        ptyReader->wait(2000);
+    }
+    if (ptyFd >= 0) {
+        ::close(ptyFd);
+        ptyFd = -1;
+    }
+    if (shellPid > 0) {
+        ::kill(shellPid, SIGTERM);
+        int status;
+        ::waitpid(shellPid, &status, WNOHANG);
+        shellPid = -1;
+    }
+#endif
 }
 
-void TerminalWidget::contextMenuEvent(QContextMenuEvent *event)
+// ── PTY startup ───────────────────────────────────────────────────────────────
+
+#ifdef Q_OS_WIN
+
+void TerminalWidget::startPty()
 {
-    QMenu *menu = new QMenu(this);
-    
-    // Copy action
-    QAction *copyAction = menu->addAction(tr("Copy"));
-    copyAction->setShortcut(QKeySequence("Ctrl+Shift+C"));
-    copyAction->setEnabled(selectedText().length() > 0);
-    connect(copyAction, &QAction::triggered, this, &QTermWidget::copyClipboard);
-    
-    // Paste action
-    QAction *pasteAction = menu->addAction(tr("Paste"));
-    pasteAction->setShortcut(QKeySequence("Ctrl+Shift+V"));
-    connect(pasteAction, &QAction::triggered, this, &QTermWidget::pasteClipboard);
-    
-    menu->addSeparator();
-    
-    // Clear action
-    QAction *clearAction = menu->addAction(tr("Clear"));
-    connect(clearAction, &QAction::triggered, this, [this]() {
-        QString shellName = QFileInfo(shellPath).fileName().toLower();
-        if (shellName == "r") {
-            executeCommand("clear()");
-        } else {
-            executeCommand("clear");
-        }
-    });
-    
-    menu->exec(event->globalPos());
-    delete menu;
+    pty = new ConPtyImpl;
+
+    // Initial size: compute from widget dimensions using the terminal font.
+    QFont font;
+    font.setFamily("Hack Nerd Font Mono");
+    font.setPointSize(10);
+    QFontMetrics fm(font);
+    pty->cols = qMax(40, width()  / qMax(1, fm.horizontalAdvance('M')));
+    pty->rows = qMax(10, height() / qMax(1, fm.height()));
+
+    COORD sz = { static_cast<SHORT>(pty->cols), static_cast<SHORT>(pty->rows) };
+
+    HANDLE hIn_r, hIn_w, hOut_r, hOut_w;
+    if (!CreatePipe(&hIn_r, &hIn_w, nullptr, 0) ||
+        !CreatePipe(&hOut_r, &hOut_w, nullptr, 0)) {
+        return;
+    }
+
+    HRESULT hr = CreatePseudoConsole(sz, hIn_r, hOut_w, 0, &pty->hPCon);
+    CloseHandle(hIn_r);
+    CloseHandle(hOut_w);
+    if (FAILED(hr)) {
+        CloseHandle(hIn_w);
+        CloseHandle(hOut_r);
+        return;
+    }
+
+    pty->hPtyIn  = hIn_w;
+    pty->hPtyOut = hOut_r;
+
+    SIZE_T attrSize = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+    auto *attrList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(
+        HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, attrSize));
+    if (!attrList) return;
+    InitializeProcThreadAttributeList(attrList, 1, 0, &attrSize);
+    UpdateProcThreadAttribute(attrList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+                              pty->hPCon, sizeof(HPCON), nullptr, nullptr);
+
+    STARTUPINFOEXW si{};
+    si.StartupInfo.cb  = sizeof(si);
+    si.lpAttributeList = attrList;
+
+    QString cmd = shellPath.contains(' ') ? '"' + shellPath + '"' : shellPath;
+    for (const QString &a : shellArgs)
+        cmd += ' ' + (a.contains(' ') ? '"' + a + '"' : a);
+    std::wstring wCmd = cmd.toStdWString();
+
+    PROCESS_INFORMATION pi{};
+    CreateProcessW(nullptr, wCmd.data(), nullptr, nullptr, FALSE,
+                   EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                   nullptr, nullptr, &si.StartupInfo, &pi);
+
+    DeleteProcThreadAttributeList(attrList);
+    HeapFree(GetProcessHeap(), 0, attrList);
+
+    pty->hProcess = pi.hProcess;
+    pty->hThread  = pi.hThread;
+
+    auto *reader = new PtyReaderThread(pty->hPtyOut, this);
+    connect(reader, &PtyReaderThread::dataReady,
+            this,   &TerminalWidget::sendOutput,
+            Qt::QueuedConnection);
+    connect(reader, &PtyReaderThread::finished, reader, &QObject::deleteLater);
+    reader->start();
 }
+
+#else  // ── POSIX forkpty ─────────────────────────────────────────────────────
+
+void TerminalWidget::startPty()
+{
+    // Initial terminal size (corrected by doResize immediately after).
+    struct winsize ws{};
+    ws.ws_col = 80;
+    ws.ws_row = 24;
+
+    // Build argv for execve.
+    QList<QByteArray> argBufs;
+    QList<const char *> argv;
+    argBufs << shellPath.toLocal8Bit();
+    argv << argBufs.last().constData();
+    for (const QString &a : shellArgs) {
+        argBufs << a.toLocal8Bit();
+        argv << argBufs.last().constData();
+    }
+    argv << nullptr;
+
+    // Build envp for execve.
+    QList<QByteArray> envBufs;
+    QList<const char *> envp;
+    for (const QString &e : envList) {
+        envBufs << e.toLocal8Bit();
+        envp << envBufs.last().constData();
+    }
+    envp << nullptr;
+
+    shellPid = forkpty(&ptyFd, nullptr, nullptr, &ws);
+    if (shellPid == 0) {
+        // Child: change to home dir and exec the shell.
+        ::chdir(QDir::homePath().toLocal8Bit().constData());
+        ::execve(argv[0],
+                 const_cast<char *const *>(argv.data()),
+                 const_cast<char *const *>(envp.data()));
+        ::_exit(1);  // execve failed
+    }
+    if (shellPid < 0) return;  // forkpty failed
+
+    auto *reader = new PtyReaderThread(ptyFd, this);
+    ptyReader = reader;
+    connect(reader, &PtyReaderThread::dataReady,
+            this,   &TerminalWidget::sendOutput,
+            Qt::QueuedConnection);
+    connect(reader, &PtyReaderThread::finished, reader, &QObject::deleteLater);
+    reader->start();
+}
+
+#endif  // Q_OS_WIN
+
+// ── PTY I/O ───────────────────────────────────────────────────────────────────
+
+void TerminalWidget::writeToPty(const QByteArray &data)
+{
+#ifdef Q_OS_WIN
+    if (!pty || pty->hPtyIn == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    WriteFile(pty->hPtyIn, data.constData(),
+              static_cast<DWORD>(data.size()), &written, nullptr);
+#else
+    if (ptyFd < 0) return;
+    ::write(ptyFd, data.constData(), static_cast<size_t>(data.size()));
+#endif
+}
+
+// Called on the main thread via Qt::QueuedConnection from PtyReaderThread.
+void TerminalWidget::sendOutput(const QByteArray &data)
+{
+    // Base64-encode for safe transport through QWebChannel's JSON serialisation.
+    emit bridge->outputReady(QString::fromLatin1(data.toBase64()));
+}
+
+void TerminalWidget::doResize(int cols, int rows)
+{
+#ifdef Q_OS_WIN
+    if (!pty || !pty->hPCon) return;
+    if (cols == pty->cols && rows == pty->rows) return;
+    pty->cols = cols;
+    pty->rows = rows;
+    COORD sz = { static_cast<SHORT>(cols), static_cast<SHORT>(rows) };
+    ResizePseudoConsole(pty->hPCon, sz);
+#else
+    if (ptyFd < 0) return;
+    struct winsize ws{};
+    ws.ws_col = static_cast<unsigned short>(cols);
+    ws.ws_row = static_cast<unsigned short>(rows);
+    ::ioctl(ptyFd, TIOCSWINSZ, &ws);
+#endif
+}
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
 
 void TerminalWidget::setTheme(const EditorTheme &theme)
 {
     currentTheme = theme;
-    
-    // Use built-in schemes based on theme brightness
-    // Don't try to create custom schemes - just use what's available
-    int brightness = theme.background.red() + theme.background.green() + theme.background.blue();
-    
-    if (brightness < 384) {
-        // Dark or medium theme - use WhiteOnBlack
-        setColorScheme("WhiteOnBlack");
-    } else {
-        // Light theme - use BlackOnWhite
-        setColorScheme("BlackOnWhite");
-    }
+    emit bridge->themeChanged(theme.background.name(),
+                               theme.foreground.name(),
+                               theme.foreground.name());
 }
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+
+void TerminalWidget::resizeEvent(QResizeEvent *event)
+{
+    QWebEngineView::resizeEvent(event);
+
+    if (!ptyStarted) return;  // don't resize before PTY exists
+
+    QFont font;
+    font.setFamily("Hack Nerd Font Mono");
+    font.setPointSize(10);
+    QFontMetrics fm(font);
+    int charW = qMax(1, fm.horizontalAdvance('M'));
+    int charH = qMax(1, fm.height());
+    int cols  = qMax(10, event->size().width()  / charW);
+    int rows  = qMax(3,  event->size().height() / charH);
+
+    // Keep xterm.js and PTY in sync.
+    page()->runJavaScript(
+        QString("if(window.termResize) window.termResize(%1, %2);").arg(cols).arg(rows));
+    doResize(cols, rows);
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
 
 void TerminalWidget::setArgs(const QStringList &args)
 {
-    QTermWidget::setArgs(args);
+    shellArgs = args;
 }
 
 void TerminalWidget::writeToShell(const QString &text)
 {
-    sendText(text);
+    writeToPty(text.toUtf8());
 }
 
 void TerminalWidget::executeCommand(const QString &command)
 {
-    sendText(command + "\n");
+    writeToPty((command + "\r").toUtf8());
 }
 
-// For multi-line code: write to a temp file and source() with echo=TRUE so
-// that R prints each expression with indentation preserved, rather than
-// having readline strip leading whitespace from continuation lines.
+void TerminalWidget::executeCommandSilent(const QString &command)
+{
+    // Write to a temp file and source() with echo=FALSE so the command
+    // text itself is not echoed in the terminal (same trick on all platforms).
+    QString pid     = QString::number(QCoreApplication::applicationPid());
+    QString tmpPath = QDir::tempPath() + "/q_cmd_" + pid + ".R";
+    QFile f(tmpPath);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&f);
+        out << command << "\n";
+        f.close();
+        tmpPath.replace('\\', '/');
+        writeToPty(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
+                       .arg(tmpPath).toUtf8());
+    } else {
+        executeCommand(command);
+    }
+}
+
 void TerminalWidget::executeRCode(const QString &code)
 {
     if (!code.contains('\n')) {
-        // Single line — send directly so the prompt feels immediate
-        sendText(code.trimmed() + "\n");
+        writeToPty((code.trimmed() + "\r").toUtf8());
         return;
     }
-    QString tmpPath = QDir::tempPath()
-        + QString("/q_run_%1.R").arg(QCoreApplication::applicationPid());
+    // Multi-line: write to a temp file and source() with echo=TRUE so R prints
+    // each expression with indentation preserved.
+    QString pid     = QString::number(QCoreApplication::applicationPid());
+    QString tmpPath = QDir::tempPath() + "/q_run_" + pid + ".R";
     QFile f(tmpPath);
     if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&f);
         out << code;
         f.close();
         tmpPath.replace('\\', '/');
-        sendText(QString("source('%1', echo=TRUE, max.deparse.length=Inf)\n").arg(tmpPath));
+        writeToPty(QString("source('%1', echo=TRUE, max.deparse.length=Inf)\r")
+                       .arg(tmpPath).toUtf8());
     } else {
-        sendText(code + "\n");
+        executeCommand(code);
     }
 }
 
-void TerminalWidget::executeCommandSilent(const QString &command)
+// ── Context menu ──────────────────────────────────────────────────────────────
+
+void TerminalWidget::contextMenuEvent(QContextMenuEvent *event)
 {
-    // Write the command to a temp file and source() it with echo=FALSE so
-    // the command text itself is not echoed in the terminal.
-    QString tmpPath = QDir::tempPath() + QString("/q_cmd_%1.R").arg(QCoreApplication::applicationPid());
-    QFile f(tmpPath);
-    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&f);
-        out << command << "\n";
-        f.close();
-        // Forward slashes required for R on all platforms
-        tmpPath.replace('\\', '/');
-        sendText(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\n").arg(tmpPath));
-    } else {
-        // Fallback to normal execution if temp file fails
-        sendText(command + "\n");
-    }
+    QMenu *menu = new QMenu(this);
+
+    QAction *copy = menu->addAction(tr("Copy"));
+    copy->setShortcut(QKeySequence("Ctrl+Shift+C"));
+    connect(copy, &QAction::triggered, this,
+            [this]() { page()->triggerAction(QWebEnginePage::Copy); });
+
+    QAction *paste = menu->addAction(tr("Paste"));
+    paste->setShortcut(QKeySequence("Ctrl+Shift+V"));
+    connect(paste, &QAction::triggered, this, [this]() {
+        writeToPty(QApplication::clipboard()->text().toUtf8());
+    });
+
+    menu->addSeparator();
+
+    QAction *clear = menu->addAction(tr("Clear"));
+    connect(clear, &QAction::triggered, this, [this]() {
+        if (QFileInfo(shellPath).fileName().toLower() == "r")
+            executeCommand("clear()");
+        else
+            writeToPty("\x0c");  // Ctrl+L clears most shells
+    });
+
+    menu->exec(event->globalPos());
+    delete menu;
 }
 
-
-
+// Required for Q_OBJECT classes (PtyReaderThread) defined in this .cpp file.
+#include "terminalwidget.moc"

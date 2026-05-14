@@ -1,0 +1,114 @@
+name: Build Windows Installer
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create / upload release assets
+
+jobs:
+  build-windows:
+    name: Build and package for Windows
+    runs-on: windows-latest
+
+    # All `run:` steps use the MSYS2 MinGW64 shell unless overridden.
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      # ── 1. Source code ────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. MSYS2 + Qt6 build environment ─────────────────────────────────
+      # The Windows terminal pane uses ConPTY (kernel32.dll, Win10 1809+) so
+      # qtermwidget6 is NOT needed here — only Qt6 base + tools.
+      - name: Set up MSYS2 (MinGW64 + Qt6)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-qt6-base
+            mingw-w64-x86_64-qt6-tools
+
+      - name: Install qide R companion package
+        shell: Rscript {0}
+        run: |
+          install.packages("qiderpkg", repos = NULL, type = "source")
+
+      # ── 4. Derive version string ──────────────────────────────────────────
+      - name: Compute version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── 5. Configure & build ──────────────────────────────────────────────
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=/mingw64
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      # ── 6. Stage application files ────────────────────────────────────────
+      - name: Deploy Qt DLLs (windeployqt6)
+        run: |
+          mkdir -p installer/staging
+          cp build/bin/q.exe installer/staging/
+
+          # Collect all Qt6 and plugin DLLs next to the executable.
+          windeployqt6 --release --dir installer/staging installer/staging/q.exe
+
+      - name: Copy MinGW runtime DLLs
+        run: |
+          for dll in \
+            libgcc_s_seh-1.dll \
+            libstdc++-6.dll \
+            libwinpthread-1.dll; do
+            cp /mingw64/bin/$dll installer/staging/ 2>/dev/null || true
+          done
+
+      - name: Copy runtime data (themes, fonts, R package)
+        run: |
+          cp -r gogh-themes  installer/staging/gogh-themes
+          cp -r fonts         installer/staging/fonts
+          cp -r qiderpkg      installer/staging/qiderpkg
+
+      # ── 7. NSIS installer ─────────────────────────────────────────────────
+      # NSIS (makensis) is pre-installed on windows-latest runners.
+      - name: Build NSIS installer
+        shell: cmd
+        run: >
+          makensis
+          /DAPP_VERSION=${{ steps.version.outputs.version }}
+          installer\windows-installer.nsi
+
+      # ── 8. Publish artifacts ──────────────────────────────────────────────
+      - name: Upload installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Q-R-IDE-${{ steps.version.outputs.version }}-Windows
+          path: installer\Q-R-IDE-*-Setup.exe
+          if-no-files-found: error
+
+      - name: Attach installer to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer\Q-R-IDE-*-Setup.exe
+          generate_release_notes: true

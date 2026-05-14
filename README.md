@@ -22,7 +22,11 @@ Open Source: As a Manjaro Linux user, I feel the non-Ubuntu Linux world is under
 
 Educational purposes: When it is more complete, I will use it in my lectures/tutorials. I think its minimal design will help students focus on learning R without being overwhelmed by complex IDE features and without the temptation of using AI tools for coding on early stages of learning programming. I am totally fine with the use of AI tools for mundane tasks in advanced courses where students already know programming fundamentals.
 
-## Test
+## Installers
+
+I used Copilot to build an installer for Windows (I do not know much about Windows). You can download it [here]().
+
+## Build and test
 
 ```
 ./build.sh --clean
@@ -30,6 +34,9 @@ Educational purposes: When it is more complete, I will use it in my lectures/tut
 ```
 
 ## Package
+
+I use Manjaro, so this is how I package the app. Please open an issue if you would like an installer
+for Ubuntu, Fedora, or another distribution of the extremely fragmented Linux ecosystem.
 
 ```
 ./build.sh --package

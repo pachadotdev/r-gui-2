@@ -172,8 +172,8 @@ void MainWindow::createMenus()
             if (shellName == "r") {
                 active->executeCommand("clear()");
             } else {
-                // For non-R shells, fall back to clearing the terminal UI
-                active->clear();
+                // Ctrl+L clears most shells; TerminalWidget routes this to the PTY
+                active->writeToShell("\x0c");
             }
         }
     });

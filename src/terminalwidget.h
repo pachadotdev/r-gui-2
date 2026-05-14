@@ -1,20 +1,41 @@
 #ifndef TERMINALWIDGET_H
 #define TERMINALWIDGET_H
 
-#include <qtermwidget6/qtermwidget.h>
 #include "thememanager.h"
-#include <QMenu>
-#include <QShortcut>
-#include <QTimer>
+#include <QWebEngineView>
+#include <QWebChannel>
 
-class TerminalWidget : public QTermWidget
+// Forward declaration so TerminalBridge can hold a pointer before TerminalWidget is defined.
+class TerminalWidget;
+
+// JS ↔ C++ bridge exposed to xterm.js via QWebChannel.
+// JS calls ready() / sendInput(); C++ emits outputReady / themeChanged.
+class TerminalBridge : public QObject
+{
+    Q_OBJECT
+public:
+    explicit TerminalBridge(QObject *parent = nullptr) : QObject(parent) {}
+
+    Q_INVOKABLE void ready();                    // JS signals it is initialised
+    Q_INVOKABLE void sendInput(const QString &data); // key/paste data from xterm.js
+
+signals:
+    void outputReady(const QString &b64data);    // base64-encoded PTY output
+    void themeChanged(const QString &bg, const QString &fg, const QString &cursor);
+
+private:
+    friend class TerminalWidget;
+    TerminalWidget *tw = nullptr;
+};
+
+class TerminalWidget : public QWebEngineView
 {
     Q_OBJECT
 
 public:
     explicit TerminalWidget(const QString &shell = QString(), QWidget *parent = nullptr);
     ~TerminalWidget();
-    
+
     void setTheme(const EditorTheme &theme);
     QString getShell() const { return shellPath; }
     void setArgs(const QStringList &args);
@@ -25,12 +46,32 @@ public:
 
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
-    QString shellPath;
+    friend class TerminalBridge;
+
+    QString     shellPath;
+    QStringList shellArgs;
+    QStringList envList;          // POSIX child environment (unused on Windows)
     EditorTheme currentTheme;
-    QShortcut *copyShortcut;
-    QShortcut *pasteShortcut;
+    TerminalBridge *bridge  = nullptr;
+    QWebChannel    *channel = nullptr;
+    bool ptyStarted = false;
+
+    void startPty();
+    void writeToPty(const QByteArray &data);
+    void sendOutput(const QByteArray &data);   // queued-connected to reader thread
+    void doResize(int cols, int rows);
+
+#ifdef Q_OS_WIN
+    struct ConPtyImpl;
+    ConPtyImpl *pty = nullptr;
+#else
+    int   ptyFd   = -1;
+    pid_t shellPid = -1;
+    class PtyReaderThread *ptyReader = nullptr;
+#endif
 };
 
 #endif // TERMINALWIDGET_H
