@@ -19,6 +19,7 @@ public:
     void lineNumberAreaPaintEvent(QPaintEvent *event);
     int lineNumberAreaWidth();
     void setTheme(const EditorTheme &theme);
+    void setFontSize(int pt);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

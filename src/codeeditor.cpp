@@ -16,7 +16,7 @@ CodeEditor::CodeEditor(QWidget *parent)
     QFont font;
     QStringList fonts = {"Hack", "Noto Sans Mono", "Courier New", "Monospace"};
     for (const QString &fontName : fonts) {
-        font = QFont(fontName, 10);
+        font = QFont(fontName, 11);
         if (QFontInfo(font).family() == fontName) {
             break;
         }
@@ -99,6 +99,15 @@ void CodeEditor::highlightCurrentLine()
     }
     
     setExtraSelections(extraSelections);
+}
+
+void CodeEditor::setFontSize(int pt)
+{
+    QFont f = font();
+    f.setPointSize(pt);
+    setFont(f);
+    setTabStopDistance(fontMetrics().horizontalAdvance(' ') * 4);
+    updateLineNumberAreaWidth(0);
 }
 
 void CodeEditor::setTheme(const EditorTheme &theme)

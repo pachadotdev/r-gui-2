@@ -78,6 +78,7 @@ private:
     
     // Current file tracking
     QString currentFile;
+    int m_globalFontSize = 11;  // shared font size for editors + terminals
     QSplitter *m_mainSplitter = nullptr;
     QSplitter *m_leftSplitter = nullptr;
     

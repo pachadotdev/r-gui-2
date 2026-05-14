@@ -247,6 +247,14 @@ void MainWindow::createMenus()
             QAction *shellAction = terminalMenuBar->addAction(tr("New %1 terminal").arg(entry.label));
             connect(shellAction, &QAction::triggered, this, [this, entry]() {
                 TerminalWidget *terminal = new TerminalWidget(entry.path, this);
+                connect(terminal, &TerminalWidget::fontSizeAdjustRequested,
+                        this,     &MainWindow::adjustAllTerminalFontSize);
+                // Start this terminal at the current global font size if it differs from default
+                if (m_globalFontSize != 11) {
+                    terminal->page()->runJavaScript(
+                        QString("if(window.adjustFontSize) window.adjustFontSize(%1);")
+                            .arg(m_globalFontSize - 11));
+                }
                 int index = consoleTabs->addTab(terminal, entry.label);
                 consoleTabs->setCurrentIndex(index);
                 consoleDock->setVisible(true);
@@ -288,6 +296,8 @@ void MainWindow::createDockWidgets()
     // Add R console as first tab
     console = new TerminalWidget("R", this);
     consoleTabs->addTab(console, "R Console");
+    connect(console, &TerminalWidget::fontSizeAdjustRequested,
+            this,    &MainWindow::adjustAllTerminalFontSize);
     // Hide the close button on the R Console tab — it cannot be closed
     consoleTabs->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
     consoleTabs->tabBar()->setTabButton(0, QTabBar::LeftSide, nullptr);
@@ -514,6 +524,8 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 void MainWindow::addNewEditorTab(const QString &title)
 {
     CodeEditor *editor = new CodeEditor(this);
+    if (m_globalFontSize != 11)
+        editor->setFontSize(m_globalFontSize);
     int index = editorTabs->addTab(editor, title);
     editorTabs->setCurrentIndex(index);
     
@@ -982,12 +994,25 @@ void MainWindow::changeTheme()
 
 void MainWindow::adjustAllTerminalFontSize(int delta)
 {
-    const char *js = delta > 0 ? "if(window.adjustFontSize) window.adjustFontSize(1);"
-                   : delta < 0 ? "if(window.adjustFontSize) window.adjustFontSize(-1);"
-                               : "if(window.resetFontSize)  window.resetFontSize();";
+    // delta = +1 (bigger), -1 (smaller), 0 (reset to default 11pt)
+    if (delta == 0)
+        m_globalFontSize = 11;
+    else
+        m_globalFontSize = qBound(6, m_globalFontSize + delta, 32);
+
+    // ── Terminals (xterm.js) ──────────────────────────────────────────────
+    const QString js = delta == 0
+        ? QStringLiteral("if(window.resetFontSize) window.resetFontSize();")
+        : QString("if(window.adjustFontSize) window.adjustFontSize(%1);").arg(delta);
     for (int i = 0; i < consoleTabs->count(); ++i) {
         if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
             tw->page()->runJavaScript(js);
+    }
+
+    // ── Script editors ────────────────────────────────────────────────────
+    for (int i = 0; i < editorTabs->count(); ++i) {
+        if (auto *ed = qobject_cast<CodeEditor*>(editorTabs->widget(i)))
+            ed->setFontSize(m_globalFontSize);
     }
 }
 

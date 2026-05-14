@@ -52,6 +52,23 @@ window.resetFontSize = function() {
 new QWebChannel(qt.webChannelTransport, function(channel) {
   window._bridge = channel.objects.bridge;
 
+  // Intercept Ctrl+/- inside xterm.js (before chars reach the shell) and
+  // route them to C++ so ALL terminals + editors resize together.
+  term.attachCustomKeyEventHandler(function(e) {
+    if (e.ctrlKey && e.type === 'keydown') {
+      if (e.key === '+' || e.key === '=') { window._bridge.fontSizeUp();    return false; }
+      if (e.key === '-')                  { window._bridge.fontSizeDown();  return false; }
+      if (e.key === '0')                  { window._bridge.fontSizeReset(); return false; }
+    }
+    return true;
+  });
+
+  // Also block the browser's own Ctrl+/- page-zoom (capture phase = before everything).
+  document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0'))
+      e.preventDefault();
+  }, true);
+
   term.onData(function(data) {
     window._bridge.sendInput(data);
   });

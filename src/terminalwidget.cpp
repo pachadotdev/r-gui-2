@@ -17,6 +17,7 @@
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QThread>
+#include <QTimer>
 #include <QWebEnginePage>
 #include <QWebEngineSettings>
 #include <atomic>
@@ -199,6 +200,10 @@ void TerminalBridge::resizePty(int cols, int rows)
     if (tw) tw->doResize(cols, rows);
 }
 
+void TerminalBridge::fontSizeUp()    { if (tw) emit tw->fontSizeAdjustRequested(+1); }
+void TerminalBridge::fontSizeDown()  { if (tw) emit tw->fontSizeAdjustRequested(-1); }
+void TerminalBridge::fontSizeReset() { if (tw) emit tw->fontSizeAdjustRequested(0);  }
+
 void TerminalBridge::ready()
 {
     if (!tw || tw->ptyStarted) return;
@@ -308,6 +313,15 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
     // ── Load the xterm.js terminal page ────────────────────────────────────
     // PTY is started when xterm.js calls bridge.ready() after QWebChannel init.
     page()->load(QUrl(QStringLiteral("qrc:///xterm/terminal.html")));
+
+    // Re-fit after load so xterm.js measures the real (laid-out) widget size,
+    // not the default viewport size the engine uses before layout settles.
+    connect(page(), &QWebEnginePage::loadFinished, this, [this](bool ok) {
+        if (!ok) return;
+        QTimer::singleShot(100, this, [this]() {
+            page()->runJavaScript("if(window.fitTerminal) window.fitTerminal();");
+        });
+    });
 }
 
 // ── Destructor ────────────────────────────────────────────────────────────────
@@ -549,11 +563,8 @@ void TerminalWidget::setTheme(const EditorTheme &theme)
 void TerminalWidget::resizeEvent(QResizeEvent *event)
 {
     QWebEngineView::resizeEvent(event);
-
-    if (!ptyStarted) return;  // don't resize before PTY exists
-
-    // Let FitAddon measure actual character dimensions and compute cols/rows.
-    // It calls bridge.resizePty(cols, rows) which updates the PTY.
+    // Always re-fit: doResize() is a no-op until ptyFd is valid, and
+    // fitTerminal() is guarded on the JS side, so this is always safe.
     page()->runJavaScript("if(window.fitTerminal) window.fitTerminal();");
 }
 

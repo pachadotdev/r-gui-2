@@ -19,6 +19,9 @@ public:
     Q_INVOKABLE void ready();                    // JS signals it is initialised
     Q_INVOKABLE void sendInput(const QString &data); // key/paste data from xterm.js
     Q_INVOKABLE void resizePty(int cols, int rows);  // JS reports actual terminal size
+    Q_INVOKABLE void fontSizeUp();    // Ctrl++ inside xterm.js
+    Q_INVOKABLE void fontSizeDown();  // Ctrl+- inside xterm.js
+    Q_INVOKABLE void fontSizeReset(); // Ctrl+0 inside xterm.js
 
 signals:
     void outputReady(const QString &b64data);    // base64-encoded PTY output
@@ -44,6 +47,9 @@ public:
     void executeCommand(const QString &command);
     void executeCommandSilent(const QString &command);
     void executeRCode(const QString &code);
+
+signals:
+    void fontSizeAdjustRequested(int delta);  // emitted when Ctrl+/- pressed inside terminal
 
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
