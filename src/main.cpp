@@ -10,8 +10,12 @@ int main(int argc, char *argv[])
     app.setOrganizationName("Q");
     app.setDesktopFileName("q");  // Without .desktop suffix
     
-    // Suppress KDE file system watcher warnings
-    qputenv("QT_LOGGING_RULES", "kf.kio.widgets.kdirmodel.debug=false;kf.jobwidgets.debug=false");
+    // Suppress portal registration warning (app not installed as a .desktop entry)
+    // and KDE file system watcher noise.
+    qputenv("QT_LOGGING_RULES",
+            "qt.qpa.services=false;"
+            "kf.kio.widgets.kdirmodel.debug=false;"
+            "kf.jobwidgets.debug=false");
     
     MainWindow window;
     window.show();

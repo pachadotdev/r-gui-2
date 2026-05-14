@@ -39,6 +39,7 @@ private slots:
     void sourceFile();
     void changeTheme();
     void about();
+    void adjustAllTerminalFontSize(int delta);  // +1 or -1; 0 = reset
 
 private:
     void createMenus();

@@ -65,13 +65,14 @@ private:
     void sendOutput(const QByteArray &data);   // queued-connected to reader thread
     void doResize(int cols, int rows);
 
+    class PtyReaderThread *ptyReader = nullptr;  // tracked on all platforms
+
 #ifdef Q_OS_WIN
     struct ConPtyImpl;
     ConPtyImpl *pty = nullptr;
 #else
-    int   ptyFd   = -1;
+    int   ptyFd    = -1;
     pid_t shellPid = -1;
-    class PtyReaderThread *ptyReader = nullptr;
 #endif
 };
 

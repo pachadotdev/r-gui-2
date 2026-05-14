@@ -26,6 +26,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QDialogButtonBox>
+#include <QShortcut>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -193,8 +194,33 @@ void MainWindow::createMenus()
     themeAct->setShortcut(Qt::CTRL | Qt::Key_T);
     connect(themeAct, &QAction::triggered, this, &MainWindow::changeTheme);
     viewMenu->addAction(themeAct);
-    
-    // Terminal menu
+
+    viewMenu->addSeparator();
+
+    // Font size menu items (display only — shortcuts handled below by QShortcut)
+    QAction *fontBiggerAct = new QAction(tr("Increase Terminal Font  Ctrl++"), this);
+    connect(fontBiggerAct, &QAction::triggered, this, [this]() { adjustAllTerminalFontSize(+1); });
+    viewMenu->addAction(fontBiggerAct);
+
+    QAction *fontSmallerAct = new QAction(tr("Decrease Terminal Font  Ctrl+-"), this);
+    connect(fontSmallerAct, &QAction::triggered, this, [this]() { adjustAllTerminalFontSize(-1); });
+    viewMenu->addAction(fontSmallerAct);
+
+    QAction *fontResetAct = new QAction(tr("Reset Terminal Font  Ctrl+0"), this);
+    connect(fontResetAct, &QAction::triggered, this, [this]() { adjustAllTerminalFontSize(0); });
+    viewMenu->addAction(fontResetAct);
+
+    // Application-level shortcuts so they fire before QWebEngineView consumes them.
+    // Ctrl++ needs both Key_Plus (Shift+=) and Key_Equal (plain =) covered.
+    auto makeFontSC = [this](const QKeySequence &ks, int delta) {
+        auto *sc = new QShortcut(ks, this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this, [this, delta]() { adjustAllTerminalFontSize(delta); });
+    };
+    makeFontSC(QKeySequence(Qt::CTRL | Qt::Key_Plus),  +1); // Ctrl+Shift+=
+    makeFontSC(QKeySequence(Qt::CTRL | Qt::Key_Equal), +1); // Ctrl+= (no shift)
+    makeFontSC(QKeySequence(Qt::CTRL | Qt::Key_Minus),  -1);
+    makeFontSC(QKeySequence(Qt::CTRL | Qt::Key_0),       0);
     QMenu *terminalMenuBar = menuBar()->addMenu(tr("&Terminal"));
     struct ShellEntry { QString path; QString label; };
     QList<ShellEntry> shellCandidates = {
@@ -951,6 +977,17 @@ void MainWindow::changeTheme()
         }
         
         qDebug() << "Theme applied successfully:" << selectedTheme;
+    }
+}
+
+void MainWindow::adjustAllTerminalFontSize(int delta)
+{
+    const char *js = delta > 0 ? "if(window.adjustFontSize) window.adjustFontSize(1);"
+                   : delta < 0 ? "if(window.adjustFontSize) window.adjustFontSize(-1);"
+                               : "if(window.resetFontSize)  window.resetFontSize();";
+    for (int i = 0; i < consoleTabs->count(); ++i) {
+        if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
+            tw->page()->runJavaScript(js);
     }
 }
 

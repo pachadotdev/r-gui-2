@@ -17,7 +17,7 @@
 <script>
 var term = new Terminal({
   fontFamily: 'Hack Nerd Font Mono, Cascadia Code, Menlo, monospace',
-  fontSize: 10,
+  fontSize: 11,
   scrollback: 10000,
   cursorBlink: true
 });
@@ -29,6 +29,21 @@ fitAddon.fit();
 
 // Called from C++ resize events – re-fit and report new size to PTY.
 window.fitTerminal = function() {
+  fitAddon.fit();
+  if (window._bridge)
+    window._bridge.resizePty(term.cols, term.rows);
+};
+
+// Called from C++ Ctrl+/Ctrl- shortcuts.
+window.adjustFontSize = function(delta) {
+  var newSize = Math.max(6, Math.min(32, term.options.fontSize + delta));
+  term.options.fontSize = newSize;
+  fitAddon.fit();
+  if (window._bridge)
+    window._bridge.resizePty(term.cols, term.rows);
+};
+window.resetFontSize = function() {
+  term.options.fontSize = 11;
   fitAddon.fit();
   if (window._bridge)
     window._bridge.resizePty(term.cols, term.rows);

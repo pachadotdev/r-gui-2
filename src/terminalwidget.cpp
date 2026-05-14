@@ -315,28 +315,44 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
 TerminalWidget::~TerminalWidget()
 {
 #ifdef Q_OS_WIN
-    if (!pty) return;
-    if (pty->hProcess != INVALID_HANDLE_VALUE) {
-        TerminateProcess(pty->hProcess, 0);
-        WaitForSingleObject(pty->hProcess, 1000);
-        CloseHandle(pty->hProcess);
+    // Terminate the shell process first — this causes ReadFile in the reader
+    // thread to return, so the thread exits on its own.
+    if (pty) {
+        if (pty->hProcess != INVALID_HANDLE_VALUE) {
+            TerminateProcess(pty->hProcess, 0);
+            WaitForSingleObject(pty->hProcess, 1000);
+            CloseHandle(pty->hProcess);
+        }
+        if (pty->hThread  != INVALID_HANDLE_VALUE) CloseHandle(pty->hThread);
+        if (pty->hPCon)                             ClosePseudoConsole(pty->hPCon);
+        if (pty->hPtyIn   != INVALID_HANDLE_VALUE)  CloseHandle(pty->hPtyIn);
+        if (pty->hPtyOut  != INVALID_HANDLE_VALUE)  CloseHandle(pty->hPtyOut);
+        delete pty;
+        pty = nullptr;
     }
-    if (pty->hThread  != INVALID_HANDLE_VALUE) CloseHandle(pty->hThread);
-    if (pty->hPCon)                             ClosePseudoConsole(pty->hPCon);
-    if (pty->hPtyIn   != INVALID_HANDLE_VALUE)  CloseHandle(pty->hPtyIn);
-    if (pty->hPtyOut  != INVALID_HANDLE_VALUE)  CloseHandle(pty->hPtyOut);
-    delete pty;
 #else
-    if (ptyReader) {
-        ptyReader->requestStop();
-        ptyReader->wait(2000);
+    // 1. Kill the shell so the PTY master sees EOF.
+    if (shellPid > 0) {
+        ::kill(shellPid, SIGTERM);
     }
+    // 2. Close the PTY fd — this unblocks ::read() in PtyReaderThread.
     if (ptyFd >= 0) {
         ::close(ptyFd);
         ptyFd = -1;
     }
+#endif
+    // 3. Wait for the reader thread to finish (fd/handle closure makes it exit).
+    if (ptyReader) {
+        ptyReader->requestStop();
+        if (!ptyReader->wait(3000)) {
+            ptyReader->terminate();
+            ptyReader->wait(1000);
+        }
+        ptyReader = nullptr;
+    }
+#ifndef Q_OS_WIN
+    // 4. Reap the child process.
     if (shellPid > 0) {
-        ::kill(shellPid, SIGTERM);
         int status;
         ::waitpid(shellPid, &status, WNOHANG);
         shellPid = -1;
@@ -410,6 +426,7 @@ void TerminalWidget::startPty()
     pty->hThread  = pi.hThread;
 
     auto *reader = new PtyReaderThread(pty->hPtyOut, this);
+    ptyReader = reader;
     connect(reader, &PtyReaderThread::dataReady,
             this,   &TerminalWidget::sendOutput,
             Qt::QueuedConnection);
