@@ -27,6 +27,8 @@
 #include <QListWidget>
 #include <QDialogButtonBox>
 #include <QShortcut>
+#include <QDesktopServices>
+#include <QUrl>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -357,41 +359,55 @@ void MainWindow::setupConnections()
     connect(fileBrowser, &FileBrowser::fileDoubleClicked, this, [this](const QString &path) {
         QFileInfo fileInfo(path);
         QString suffix = fileInfo.suffix().toLower();
-        
-        // Check if it's a supported file type
-        QStringList supportedTypes = {"r", "rmd", "qmd", "h", "c", "hpp", "cpp", "rproject"};
-        
-        if (supportedTypes.contains(suffix)) {
-            // Special handling for .rproject files
-            if (suffix == "rproject") {
-                QString projectDir = fileInfo.absolutePath();
-                
-                // Set file browser to project directory
-                fileBrowser->setRootPath(projectDir);
-                
-                // Set R working directory
-                if (console) {
-                    QString rCommand = QString("setwd('%1')").arg(projectDir.replace('\\', '/'));
-                    console->executeCommand(rCommand);
-                    statusBar()->showMessage(tr("Opened project: %1").arg(fileInfo.fileName()), 5000);
-                }
+
+        // .rproject: switch project directory
+        if (suffix == "rproject") {
+            QString projectDir = fileInfo.absolutePath();
+            fileBrowser->setRootPath(projectDir);
+            m_currentDir = projectDir;
+            if (console) {
+                console->executeCommand(
+                    QString("setwd('%1')").arg(QString(projectDir).replace('\\', '/')));
+                statusBar()->showMessage(tr("Opened project: %1").arg(fileInfo.fileName()), 5000);
             }
-            
-            // Open the file
-            QFile file(path);
-            if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                QTextStream in(&file);
-                QString content = in.readAll();
-                file.close();
-                
-                addNewEditorTab(fileInfo.fileName());
-                CodeEditor *editor = getCurrentEditor();
-                if (editor) {
-                    editor->setPlainText(content);
-                    editor->setProperty("filePath", path);
-                    editor->document()->setModified(false);
-                }
-            }
+            return;
+        }
+
+        // Binary / media formats: open with the OS default application.
+        static const QStringList osTypes = {
+            "png", "jpg", "jpeg", "gif", "bmp", "svg", "webp", "tiff", "tif",
+            "pdf", "xlsx", "xls", "docx", "doc", "pptx", "ppt",
+            "zip", "tar", "gz", "bz2", "xz",
+            "mp4", "avi", "mov", "mkv", "mp3", "wav", "ogg"
+        };
+        if (osTypes.contains(suffix)) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+            return;
+        }
+
+        // Everything else: open as plain text in the editor.
+        // We try to read the file; if it looks binary we fall back to the OS.
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return;
+        QByteArray sample = file.read(8192);
+        // Heuristic: if the sample contains a NUL byte it is likely binary.
+        if (sample.contains('\0')) {
+            file.close();
+            QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+            return;
+        }
+        // Seek back and read the rest as text.
+        file.seek(0);
+        QTextStream in(&file);
+        QString content = in.readAll();
+        file.close();
+
+        addNewEditorTab(fileInfo.fileName());
+        CodeEditor *editor = getCurrentEditor();
+        if (editor) {
+            editor->setPlainText(content);
+            editor->setProperty("filePath", path);
+            editor->document()->setModified(false);
         }
     });
 }
