@@ -1,8 +1,9 @@
 #include "codeeditor.h"
-#include "rsyntaxhighlighter.h"
+#include "syntaxhighlighter.h"
 #include <QPainter>
 #include <QTextBlock>
 #include <QFont>
+#include <QFileInfo>
 
 CodeEditor::CodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
@@ -112,6 +113,26 @@ void CodeEditor::setFontSize(int pt)
     setStyleSheet(styleSheet() + QString(" QPlainTextEdit { font-size: %1pt; }").arg(pt));
     setTabStopDistance(fontMetrics().horizontalAdvance(' ') * 4);
     updateLineNumberAreaWidth(0);
+}
+
+void CodeEditor::setLanguage(RSyntaxHighlighter::Language lang)
+{
+    if (highlighter)
+        highlighter->setLanguage(lang);
+}
+
+void CodeEditor::setLanguageFromFile(const QString &filePath)
+{
+    const QString suffix = QFileInfo(filePath).suffix().toLower();
+    RSyntaxHighlighter::Language lang = RSyntaxHighlighter::Language::PlainText;
+    if (suffix == "r" || suffix == "rmd" || suffix == "qmd" || suffix == "rproject")
+        lang = RSyntaxHighlighter::Language::R;
+    else if (suffix == "cpp" || suffix == "hpp" || suffix == "cc" || suffix == "cxx"
+             || suffix == "c" || suffix == "h")
+        lang = RSyntaxHighlighter::Language::CPP;
+    else if (suffix == "md" || suffix == "markdown" || suffix == "rmd" || suffix == "qmd")
+        lang = RSyntaxHighlighter::Language::Markdown;
+    setLanguage(lang);
 }
 
 void CodeEditor::setTheme(const EditorTheme &theme)

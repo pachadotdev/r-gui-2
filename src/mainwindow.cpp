@@ -407,6 +407,7 @@ void MainWindow::setupConnections()
         if (editor) {
             editor->setPlainText(content);
             editor->setProperty("filePath", path);
+            editor->setLanguageFromFile(path);
             editor->document()->setModified(false);
         }
     });
@@ -654,6 +655,7 @@ void MainWindow::openFile()
             if (editor) {
                 editor->setPlainText(content);
                 editor->setProperty("filePath", fileName);
+                editor->setLanguageFromFile(fileName);
                 editor->document()->setModified(false);
             }
         }

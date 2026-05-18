@@ -36,8 +36,8 @@ set(SOURCES
     src/mainwindow.h
     src/codeeditor.cpp
     src/codeeditor.h
-    src/rsyntaxhighlighter.cpp
-    src/rsyntaxhighlighter.h
+    src/syntaxhighlighter.cpp
+    src/syntaxhighlighter.h
     src/filebrowser.cpp
     src/filebrowser.h
     src/thememanager.cpp

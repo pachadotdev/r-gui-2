@@ -4,8 +4,8 @@
 #include <QPlainTextEdit>
 #include <QObject>
 #include "thememanager.h"
+#include "syntaxhighlighter.h"
 
-class RSyntaxHighlighter;
 class QPaintEvent;
 class QResizeEvent;
 
@@ -20,6 +20,8 @@ public:
     int lineNumberAreaWidth();
     void setTheme(const EditorTheme &theme);
     void setFontSize(int pt);
+    void setLanguage(RSyntaxHighlighter::Language lang);
+    void setLanguageFromFile(const QString &filePath);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
