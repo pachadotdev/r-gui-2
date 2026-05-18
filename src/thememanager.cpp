@@ -171,7 +171,6 @@ QString ThemeManager::toStyleSheet(const EditorTheme &theme) const
         "   color: %2;"
         "   selection-background-color: %3;"
         "   font-family: 'Hack', 'Courier New', monospace;"
-        "   font-size: 10pt;"
         "}"
         "QMenuBar {"
         "   background-color: %1;"

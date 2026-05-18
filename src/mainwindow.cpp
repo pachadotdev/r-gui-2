@@ -249,12 +249,16 @@ void MainWindow::createMenus()
                 TerminalWidget *terminal = new TerminalWidget(entry.path, this);
                 connect(terminal, &TerminalWidget::fontSizeAdjustRequested,
                         this,     &MainWindow::adjustAllTerminalFontSize);
-                // Start this terminal at the current global font size if it differs from default
-                if (m_globalFontSize != 11) {
-                    terminal->page()->runJavaScript(
-                        QString("if(window.adjustFontSize) window.adjustFontSize(%1);")
-                            .arg(m_globalFontSize - 11));
-                }
+                // Start this terminal at the current global font size.
+                const int gs = m_globalFontSize;
+                const QString initJs = QString(
+                    "if (window.setFontSize) {"
+                    "  window.setFontSize(%1);"
+                    "} else if (window.resetFontSize && window.adjustFontSize) {"
+                    "  window.resetFontSize();"
+                    "  window.adjustFontSize(%1 - 11);"
+                    "}").arg(gs);
+                terminal->page()->runJavaScript(initJs);
                 int index = consoleTabs->addTab(terminal, entry.label);
                 consoleTabs->setCurrentIndex(index);
                 consoleDock->setVisible(true);
@@ -402,7 +406,30 @@ void MainWindow::loadSettings()
 {
     QSettings settings("Q", "Q");
     restoreGeometry(settings.value("geometry").toByteArray());
-    
+
+    // Restore the shared font size (editors + terminals).
+    m_globalFontSize = settings.value("globalFontSize", 11).toInt();
+    m_globalFontSize = qBound(6, m_globalFontSize, 32);
+    // Apply once the web views have finished loading their HTML.
+    QTimer::singleShot(0, this, [this]() {
+        const int gs = m_globalFontSize;
+        const QString js = QString(
+            "if (window.setFontSize) {"
+            "  window.setFontSize(%1);"
+            "} else if (window.resetFontSize && window.adjustFontSize) {"
+            "  window.resetFontSize();"
+            "  window.adjustFontSize(%1 - 11);"
+            "}").arg(gs);
+        for (int i = 0; i < consoleTabs->count(); ++i) {
+            if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
+                tw->page()->runJavaScript(js);
+        }
+        for (int i = 0; i < editorTabs->count(); ++i) {
+            if (auto *ed = qobject_cast<CodeEditor*>(editorTabs->widget(i)))
+                ed->setFontSize(m_globalFontSize);
+        }
+    });
+
     if (!restoreState(settings.value("windowState").toByteArray())) {
         // First run defaults: arrange docks to:
         // Left column: script (top) and console (bottom)
@@ -1001,9 +1028,16 @@ void MainWindow::adjustAllTerminalFontSize(int delta)
         m_globalFontSize = qBound(6, m_globalFontSize + delta, 32);
 
     // ── Terminals (xterm.js) ──────────────────────────────────────────────
-    const QString js = delta == 0
-        ? QStringLiteral("if(window.resetFontSize) window.resetFontSize();")
-        : QString("if(window.adjustFontSize) window.adjustFontSize(%1);").arg(delta);
+    // Use the absolute setter so every terminal lands on the *same* size.
+    // Fall back to reset + delta for older terminal.html that lacks setFontSize.
+    const int target = m_globalFontSize;
+    const QString js = QString(
+        "if (window.setFontSize) {"
+        "  window.setFontSize(%1);"
+        "} else if (window.resetFontSize && window.adjustFontSize) {"
+        "  window.resetFontSize();"
+        "  window.adjustFontSize(%1 - 11);"
+        "}").arg(target);
     for (int i = 0; i < consoleTabs->count(); ++i) {
         if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
             tw->page()->runJavaScript(js);
@@ -1014,6 +1048,10 @@ void MainWindow::adjustAllTerminalFontSize(int delta)
         if (auto *ed = qobject_cast<CodeEditor*>(editorTabs->widget(i)))
             ed->setFontSize(m_globalFontSize);
     }
+
+    // Persist immediately so the size survives across sessions.
+    QSettings settings("Q", "Q");
+    settings.setValue("globalFontSize", m_globalFontSize);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

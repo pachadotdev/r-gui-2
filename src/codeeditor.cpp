@@ -103,9 +103,13 @@ void CodeEditor::highlightCurrentLine()
 
 void CodeEditor::setFontSize(int pt)
 {
+    m_fontSize = pt;
     QFont f = font();
     f.setPointSize(pt);
     setFont(f);
+    // Defensive: a per-widget stylesheet wins over the app-wide one,
+    // so even if a theme stylesheet sets font-size we keep ours.
+    setStyleSheet(styleSheet() + QString(" QPlainTextEdit { font-size: %1pt; }").arg(pt));
     setTabStopDistance(fontMetrics().horizontalAdvance(' ') * 4);
     updateLineNumberAreaWidth(0);
 }
@@ -114,6 +118,8 @@ void CodeEditor::setTheme(const EditorTheme &theme)
 {
     currentTheme = theme;
     setStyleSheet(ThemeManager::instance().toStyleSheet(theme));
+    // Re-apply the current font size so the theme stylesheet can't clobber it.
+    setFontSize(m_fontSize);
     if (highlighter) {
         highlighter->setTheme(theme);
         highlighter->rehighlight();

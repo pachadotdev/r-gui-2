@@ -48,6 +48,14 @@ window.resetFontSize = function() {
   if (window._bridge)
     window._bridge.resizePty(term.cols, term.rows);
 };
+// Absolute setter so C++ can keep every terminal perfectly in sync.
+window.setFontSize = function(size) {
+  var newSize = Math.max(6, Math.min(32, size|0));
+  term.options.fontSize = newSize;
+  fitAddon.fit();
+  if (window._bridge)
+    window._bridge.resizePty(term.cols, term.rows);
+};
 
 new QWebChannel(qt.webChannelTransport, function(channel) {
   window._bridge = channel.objects.bridge;
