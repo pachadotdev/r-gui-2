@@ -6,6 +6,10 @@ Q is a lightweight Integrated Development Environment (IDE) for the R Programmin
 
 I find the R GUI really nice but too minimal for some users, so Q aims to be something in between the R GUI, RStudio and classic tools such as Stata, providing a few more features while keeping things simple and fast.
 
+Here is a screenshot of the current version:
+
+![q-ide](screenshot.png "Q IDE")
+
 ## Features
 
 Q offers a clean and user-friendly interface for writing, running, and debugging R code. It includes: syntax highlighting, an integrated R console, and themes support (obtained from https://github.com/Gogh-Co/Gogh).
