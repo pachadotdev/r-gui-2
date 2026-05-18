@@ -318,10 +318,36 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
     // not the default viewport size the engine uses before layout settles.
     connect(page(), &QWebEnginePage::loadFinished, this, [this](bool ok) {
         if (!ok) return;
+        pageLoaded = true;
+        // Apply any font size requested before the page was ready.
+        if (pendingFontSize > 0) {
+            const int s = pendingFontSize;
+            page()->runJavaScript(QString(
+                "if (window.setFontSize) {"
+                "  window.setFontSize(%1);"
+                "} else if (window.resetFontSize && window.adjustFontSize) {"
+                "  window.resetFontSize();"
+                "  window.adjustFontSize(%1 - 11);"
+                "}").arg(s));
+        }
         QTimer::singleShot(100, this, [this]() {
             page()->runJavaScript("if(window.fitTerminal) window.fitTerminal();");
         });
     });
+}
+
+void TerminalWidget::setInitialFontSize(int pt)
+{
+    pendingFontSize = pt;
+    if (pageLoaded) {
+        page()->runJavaScript(QString(
+            "if (window.setFontSize) {"
+            "  window.setFontSize(%1);"
+            "} else if (window.resetFontSize && window.adjustFontSize) {"
+            "  window.resetFontSize();"
+            "  window.adjustFontSize(%1 - 11);"
+            "}").arg(pt));
+    }
 }
 
 // ── Destructor ────────────────────────────────────────────────────────────────
@@ -488,8 +514,9 @@ void TerminalWidget::startPty()
 
     shellPid = forkpty(&ptyFd, nullptr, nullptr, &ws);
     if (shellPid == 0) {
-        // Child: change to home dir and exec the shell.
-        ::chdir(QDir::homePath().toLocal8Bit().constData());
+        // Child: change to the requested working directory (fallback to home).
+        const QString startDir = m_workingDir.isEmpty() ? QDir::homePath() : m_workingDir;
+        ::chdir(startDir.toLocal8Bit().constData());
         ::execve(argv[0],
                  const_cast<char *const *>(argv.data()),
                  const_cast<char *const *>(envp.data()));

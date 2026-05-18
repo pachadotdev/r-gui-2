@@ -247,18 +247,12 @@ void MainWindow::createMenus()
             QAction *shellAction = terminalMenuBar->addAction(tr("New %1 terminal").arg(entry.label));
             connect(shellAction, &QAction::triggered, this, [this, entry]() {
                 TerminalWidget *terminal = new TerminalWidget(entry.path, this);
+                if (!m_currentDir.isEmpty())
+                    terminal->setWorkingDirectory(m_currentDir);
                 connect(terminal, &TerminalWidget::fontSizeAdjustRequested,
                         this,     &MainWindow::adjustAllTerminalFontSize);
                 // Start this terminal at the current global font size.
-                const int gs = m_globalFontSize;
-                const QString initJs = QString(
-                    "if (window.setFontSize) {"
-                    "  window.setFontSize(%1);"
-                    "} else if (window.resetFontSize && window.adjustFontSize) {"
-                    "  window.resetFontSize();"
-                    "  window.adjustFontSize(%1 - 11);"
-                    "}").arg(gs);
-                terminal->page()->runJavaScript(initJs);
+                terminal->setInitialFontSize(m_globalFontSize);
                 int index = consoleTabs->addTab(terminal, entry.label);
                 consoleTabs->setCurrentIndex(index);
                 consoleDock->setVisible(true);
@@ -411,24 +405,15 @@ void MainWindow::loadSettings()
     m_globalFontSize = settings.value("globalFontSize", 11).toInt();
     m_globalFontSize = qBound(6, m_globalFontSize, 32);
     // Apply once the web views have finished loading their HTML.
-    QTimer::singleShot(0, this, [this]() {
-        const int gs = m_globalFontSize;
-        const QString js = QString(
-            "if (window.setFontSize) {"
-            "  window.setFontSize(%1);"
-            "} else if (window.resetFontSize && window.adjustFontSize) {"
-            "  window.resetFontSize();"
-            "  window.adjustFontSize(%1 - 11);"
-            "}").arg(gs);
-        for (int i = 0; i < consoleTabs->count(); ++i) {
-            if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
-                tw->page()->runJavaScript(js);
-        }
-        for (int i = 0; i < editorTabs->count(); ++i) {
-            if (auto *ed = qobject_cast<CodeEditor*>(editorTabs->widget(i)))
-                ed->setFontSize(m_globalFontSize);
-        }
-    });
+    // setInitialFontSize() handles the deferred-apply case if the page is still loading.
+    for (int i = 0; i < consoleTabs->count(); ++i) {
+        if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
+            tw->setInitialFontSize(m_globalFontSize);
+    }
+    for (int i = 0; i < editorTabs->count(); ++i) {
+        if (auto *ed = qobject_cast<CodeEditor*>(editorTabs->widget(i)))
+            ed->setFontSize(m_globalFontSize);
+    }
 
     if (!restoreState(settings.value("windowState").toByteArray())) {
         // First run defaults: arrange docks to:
@@ -666,15 +651,29 @@ void MainWindow::openDirectory()
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     
     if (!dirPath.isEmpty()) {
+        // Remember for future terminal sessions.
+        m_currentDir = dirPath;
+
         // Set file browser to this directory
         fileBrowser->setRootPath(dirPath);
         
-        // Set R working directory
+        // Set R working directory in the R console.
         if (console) {
-            QString rCommand = QString("setwd('%1')").arg(dirPath.replace('\\', '/'));
+            QString rCommand = QString("setwd('%1')").arg(QString(dirPath).replace('\\', '/'));
             console->executeCommand(rCommand);
-            statusBar()->showMessage(tr("Working directory: %1").arg(dirPath), 5000);
         }
+
+        // cd in every non-R terminal tab.
+        const QString cdCmd = QString("cd '%1'\n").arg(dirPath);
+        for (int i = 1; i < consoleTabs->count(); ++i) {
+            if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i))) {
+                QString shellName = QFileInfo(tw->getShell()).fileName().toLower();
+                if (shellName != "r")
+                    tw->writeToShell(cdCmd);
+            }
+        }
+
+        statusBar()->showMessage(tr("Working directory: %1").arg(dirPath), 5000);
     }
 }
 

@@ -79,6 +79,7 @@ private:
     // Current file tracking
     QString currentFile;
     int m_globalFontSize = 11;  // shared font size for editors + terminals
+    QString m_currentDir;         // last directory opened via Open Directory
     QSplitter *m_mainSplitter = nullptr;
     QSplitter *m_leftSplitter = nullptr;
     

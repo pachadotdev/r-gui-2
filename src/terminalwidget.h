@@ -47,6 +47,10 @@ public:
     void executeCommand(const QString &command);
     void executeCommandSilent(const QString &command);
     void executeRCode(const QString &code);
+    // Apply a font size as soon as the page is ready (deferred if still loading).
+    void setInitialFontSize(int pt);
+    // Set the working directory for new PTY sessions (must be called before the page loads).
+    void setWorkingDirectory(const QString &dir) { m_workingDir = dir; }
 
 signals:
     void fontSizeAdjustRequested(int delta);  // emitted when Ctrl+/- pressed inside terminal
@@ -59,12 +63,15 @@ private:
     friend class TerminalBridge;
 
     QString     shellPath;
+    QString     m_workingDir;     // initial working directory for the PTY child
     QStringList shellArgs;
     QStringList envList;          // POSIX child environment (unused on Windows)
     EditorTheme currentTheme;
     TerminalBridge *bridge  = nullptr;
     QWebChannel    *channel = nullptr;
     bool ptyStarted = false;
+    bool pageLoaded = false;
+    int  pendingFontSize = 0;   // 0 = none pending
 
     void startPty();
     void writeToPty(const QByteArray &data);
