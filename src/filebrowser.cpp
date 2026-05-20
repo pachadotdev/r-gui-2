@@ -1,6 +1,7 @@
 #include "filebrowser.h"
 #include <QDir>
 #include <QHeaderView>
+#include <QSettings>
 #include <QMenu>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -39,18 +40,26 @@ FileBrowser::FileBrowser(QWidget *parent)
     treeView->sortByColumn(0, Qt::AscendingOrder);
     treeView->setContextMenuPolicy(Qt::CustomContextMenu);
     
-    // Show columns for sorting options
-    treeView->setColumnWidth(0, 200);
-    treeView->showColumn(1); // Size
-    treeView->showColumn(2); // Type
-    treeView->showColumn(3); // Date modified
+    // Restore column visibility (default: hide Size and Type)
+    {
+        QSettings s("Q", "Q");
+        treeView->setColumnWidth(0, 200);
+        treeView->setColumnHidden(1, s.value("filesBrowserCol1Hidden", true).toBool());
+        treeView->setColumnHidden(2, s.value("filesBrowserCol2Hidden", true).toBool());
+        // treeView->setColumnHidden(3, s.value("filesBrowserCol3Hidden", true).toBool());
+    }
     
     // Set header
-    treeView->header()->setStretchLastSection(false);
+    treeView->header()->setStretchLastSection(true);
     // Allow resizing all columns
     treeView->header()->setSectionResizeMode(QHeaderView::Interactive);
     // Set initial width for name column
     treeView->setColumnWidth(0, 250);
+
+    // Right-click on header to show/hide columns
+    treeView->header()->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(treeView->header(), &QHeaderView::customContextMenuRequested,
+            this, &FileBrowser::showHeaderContextMenu);
     
     layout->addWidget(treeView);
     
@@ -139,6 +148,30 @@ void FileBrowser::showContextMenu(const QPoint &pos)
     connect(sortDateAct, &QAction::triggered, this, &FileBrowser::sortByDate);
     
     contextMenu.exec(treeView->viewport()->mapToGlobal(pos));
+}
+
+void FileBrowser::showHeaderContextMenu(const QPoint &pos)
+{
+    struct ColInfo { int col; QString label; };
+    const ColInfo cols[] = {
+        {1, tr("Size")},
+        {2, tr("Type")},
+        {3, tr("Date Modified")},
+    };
+
+    QMenu menu(this);
+    for (const auto &c : cols) {
+        QAction *act = menu.addAction(c.label);
+        act->setCheckable(true);
+        act->setChecked(!treeView->isColumnHidden(c.col));
+        int col = c.col;
+        connect(act, &QAction::toggled, this, [this, col](bool checked) {
+            treeView->setColumnHidden(col, !checked);
+            QSettings s("Q", "Q");
+            s.setValue(QString("filesBrowserCol%1Hidden").arg(col), !checked);
+        });
+    }
+    menu.exec(treeView->header()->mapToGlobal(pos));
 }
 
 void FileBrowser::renameFile()

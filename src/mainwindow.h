@@ -17,6 +17,7 @@ class FileBrowser;
 class TerminalWidget;
 class EnvironmentPane;
 class PlotPane;
+class HelpPane;
 
 class MainWindow : public QMainWindow
 {
@@ -60,6 +61,7 @@ private:
     QDockWidget *filesDock;
     QDockWidget *envDock;
     QDockWidget *plotDock;
+    QDockWidget *helpDock;
     
     // Console tabs
     QTabWidget *consoleTabs;
@@ -69,6 +71,7 @@ private:
     FileBrowser *fileBrowser;
     EnvironmentPane *envPane;
     PlotPane *plotPane;
+    HelpPane *helpPane;
     
     // Menus
     QMenu *fileMenu;

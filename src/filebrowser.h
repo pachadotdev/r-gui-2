@@ -22,6 +22,7 @@ private slots:
     void onItemDoubleClicked(const QModelIndex &index);
     void onFilterChanged(const QString &text);
     void showContextMenu(const QPoint &pos);
+    void showHeaderContextMenu(const QPoint &pos);
     void renameFile();
     void deleteFile();
     void copyFile();

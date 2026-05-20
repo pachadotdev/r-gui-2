@@ -26,7 +26,7 @@ jobs:
 
       # ── 2. MSYS2 + Qt6 build environment ─────────────────────────────────
       # The Windows terminal pane uses ConPTY (kernel32.dll, Win10 1809+) so
-      # qtermwidget6 is NOT needed here — only Qt6 base + tools.
+      # qtermwidget6 is NOT needed here - only Qt6 base + tools.
       - name: Set up MSYS2 (MinGW64 + Qt6)
         uses: msys2/setup-msys2@v2
         with:

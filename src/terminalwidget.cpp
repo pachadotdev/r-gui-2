@@ -355,7 +355,7 @@ void TerminalWidget::setInitialFontSize(int pt)
 TerminalWidget::~TerminalWidget()
 {
 #ifdef Q_OS_WIN
-    // Terminate the shell process first — this causes ReadFile in the reader
+    // Terminate the shell process first - this causes ReadFile in the reader
     // thread to return, so the thread exits on its own.
     if (pty) {
         if (pty->hProcess != INVALID_HANDLE_VALUE) {
@@ -375,7 +375,7 @@ TerminalWidget::~TerminalWidget()
     if (shellPid > 0) {
         ::kill(shellPid, SIGTERM);
     }
-    // 2. Close the PTY fd — this unblocks ::read() in PtyReaderThread.
+    // 2. Close the PTY fd - this unblocks ::read() in PtyReaderThread.
     if (ptyFd >= 0) {
         ::close(ptyFd);
         ptyFd = -1;

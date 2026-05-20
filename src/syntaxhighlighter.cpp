@@ -149,7 +149,7 @@ void RSyntaxHighlighter::buildCPPRules(const EditorTheme &theme)
     rule.pattern = QRegularExpression("'([^'\\\\]|\\\\.)'");
     highlightingRules.append(rule);
 
-    // Line comments (//) — added last so they override everything above
+    // Line comments (//) - added last so they override everything above
     commentFormat.setForeground(theme.comment);
     commentFormat.setFontItalic(true);
     rule.pattern = QRegularExpression("//[^\n]*");

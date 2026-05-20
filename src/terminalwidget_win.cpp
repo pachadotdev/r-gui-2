@@ -525,19 +525,19 @@ void TerminalWidget::processVtData(const QByteArray &incoming)
 
             } else if (next == ']') {
                 // OSC: ESC ] <text> BEL  or  ESC ] <text> ESC '\'
-                // Used for window title etc. — ignore content.
+                // Used for window title etc. - ignore content.
                 int j = i + 2;
                 while (j < len) {
                     if (buf[j] == '\007') { i = j + 1; goto next_char; }
                     if (j + 1 < len && buf[j] == '\033' && buf[j+1] == '\\') { i = j + 2; goto next_char; }
                     ++j;
                 }
-                // Didn't find terminator — buffer and wait for more data
+                // Didn't find terminator - buffer and wait for more data
                 vtBuffer = buf.mid(i);
                 goto flush;
 
             } else {
-                // 2-char ESC sequence (ESC c, ESC =, ESC >, etc.) — skip
+                // 2-char ESC sequence (ESC c, ESC =, ESC >, etc.) - skip
                 i += 2;
             }
 

@@ -49,7 +49,10 @@ set(SOURCES
     src/environmentpane.h
     src/plotpane.cpp
     src/plotpane.h
+    src/helppane.cpp
+    src/helppane.h
 )
+
 
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES})
