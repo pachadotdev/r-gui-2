@@ -209,10 +209,32 @@ void HelpPane::injectThemeCss()
     const EditorTheme theme = ThemeManager::instance().currentTheme();
     const QColor bg   = theme.background;
     const QColor fg   = theme.foreground;
-    const QColor link = theme.function.isValid() ? theme.function : theme.keyword;
     const QColor codeBg = theme.lineNumberBg.isValid() ? theme.lineNumberBg
                                                        : bg.lighter(115);
     const QColor border = fg.darker(150);
+
+    // Pick a link colour with guaranteed contrast against bg.
+    // Start from theme.function (or theme.keyword), then lighten/darken until
+    // the relative-luminance contrast is ≥ 4.5:1 (WCAG AA).
+    auto toLinear = [](qreal c) {
+        return c <= 0.03928 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+    };
+    auto luminance = [&](const QColor &c) {
+        return 0.2126 * toLinear(c.redF())
+             + 0.7152 * toLinear(c.greenF())
+             + 0.0722 * toLinear(c.blueF());
+    };
+    auto contrast = [&](const QColor &a, const QColor &b) {
+        qreal la = luminance(a), lb = luminance(b);
+        return (qMax(la, lb) + 0.05) / (qMin(la, lb) + 0.05);
+    };
+
+    QColor link = theme.function.isValid() ? theme.function : theme.keyword;
+    // Nudge the link colour until we reach ≥ 4.5:1 contrast with bg.
+    for (int i = 0; i < 20 && contrast(link, bg) < 4.5; ++i) {
+        // If bg is dark, lighten; if light, darken.
+        link = luminance(bg) < 0.18 ? link.lighter(115) : link.darker(115);
+    }
 
     auto rgba = [](const QColor &c, qreal a = 1.0) {
         return QString("rgba(%1,%2,%3,%4)")
@@ -222,7 +244,11 @@ void HelpPane::injectThemeCss()
     const QString css = QString(R"CSS(
         html, body { background: %1 !important; color: %2 !important; }
         body { font-family: sans-serif; }
-        a, a:visited { color: %3 !important; }
+        a, a:link, a:visited {
+            color: %3 !important;
+            background: %1 !important;
+            text-decoration: none;
+        }
         a:hover { text-decoration: underline; }
         h1, h2, h3, h4, h5, h6, table, tr, td, th, dt, dd, p, li, span, div {
             color: %2 !important;
@@ -240,7 +266,6 @@ void HelpPane::injectThemeCss()
         table { border-collapse: collapse; }
         table, th, td { border: 1px solid %4 !important; }
         hr { border-color: %4 !important; }
-        img { filter: none; }
     )CSS").arg(rgba(bg), rgba(fg), rgba(link), rgba(border), rgba(codeBg));
 
     // Strip newlines so we can embed the CSS literal in a JS string safely.
