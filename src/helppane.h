@@ -11,6 +11,7 @@
 #include <QTimer>
 
 class TerminalWidget;
+struct EditorTheme;
 
 class HelpPane : public QWidget
 {
@@ -21,6 +22,9 @@ public:
 
     // Trigger a help lookup from outside (e.g. right-click → Help on selected word)
     void lookupTopic(const QString &topic);
+
+    // Apply the IDE theme to the rendered R help pages.
+    void setTheme(const EditorTheme &theme);
 
 public slots:
     void startHelpServer();
@@ -33,6 +37,8 @@ private slots:
 private:
     void navigateTo(const QString &path);
     void applyPort(int port);
+    void resolveHelpTopic(const QString &topic);
+    void injectThemeCss();
 
     TerminalWidget   *m_terminal;
     QLineEdit        *m_searchBar;
@@ -43,6 +49,8 @@ private:
     QTimer           *m_pollTimer;
 
     QString m_portFilePath;
+    QString m_helpUrlFilePath;
+    QString m_helpQueueFilePath;
     int     m_helpPort = 0;
 };
 

@@ -37,6 +37,7 @@
 #  include <signal.h>
 #  include <sys/ioctl.h>
 #  include <sys/wait.h>
+#  include <termios.h>
 #  ifdef Q_OS_MACOS
 #    include <util.h>
 #  else
@@ -130,6 +131,11 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "  if (requireNamespace('qide', quietly=TRUE)) {\n"
         << "    library(qide)\n"
         << "    qide::init_monitor(Sys.getenv('Q_ENV_FILE', unset='/tmp/q_env.json'))\n"
+        << "    tryCatch(qide::init_help_pane(\n"
+        << "      port_file  = Sys.getenv('Q_HELP_PORT_FILE',  unset='/tmp/q_help_port'),\n"
+        << "      queue_file = Sys.getenv('Q_HELP_QUEUE_FILE', unset='/tmp/q_help_queue'),\n"
+        << "      url_file   = Sys.getenv('Q_HELP_URL_FILE',   unset='/tmp/q_help_url')\n"
+        << "    ), error = function(e) NULL)\n"
         << "  }\n"
         << "\n"
         << "  # ── Q plot capture ────────────────────────────────────────────────────\n"
@@ -616,19 +622,22 @@ void TerminalWidget::executeCommandSilent(const QString &command)
 {
     // Write to a temp file and source() with echo=FALSE so the command
     // text itself is not echoed in the terminal (same trick on all platforms).
+    // NOTE: R uses GNU readline which redisplays input; the source(...) line
+    // will still be visible in the console. For truly invisible execution,
+    // route the command through the qide::init_help_pane queue mechanism.
     QString pid     = QString::number(QCoreApplication::applicationPid());
     QString tmpPath = QDir::tempPath() + "/q_cmd_" + pid + ".R";
     QFile f(tmpPath);
-    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&f);
-        out << command << "\n";
-        f.close();
-        tmpPath.replace('\\', '/');
-        writeToPty(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
-                       .arg(tmpPath).toUtf8());
-    } else {
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
         executeCommand(command);
+        return;
     }
+    QTextStream out(&f);
+    out << command << "\n";
+    f.close();
+    tmpPath.replace('\\', '/');
+    writeToPty(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
+                   .arg(tmpPath).toUtf8());
 }
 
 void TerminalWidget::executeRCode(const QString &code)

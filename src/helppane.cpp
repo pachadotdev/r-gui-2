@@ -1,5 +1,6 @@
 #include "helppane.h"
 #include "terminalwidget.h"
+#include "thememanager.h"
 
 #include <QDir>
 #include <QFile>
@@ -16,9 +17,13 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
     , m_terminal(terminal)
     , m_helpPort(0)
 {
-    // ── Temp file that R writes the help-server port into ─────────────────
+    // ── Temp files R reads/writes ─────────────────────────────────────────
+    // These paths must match Q_HELP_PORT_FILE / Q_HELP_QUEUE_FILE /
+    // Q_HELP_URL_FILE in terminalwidget.cpp's setupREnv().
     QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    m_portFilePath  = QDir(tempDir).filePath("q_help_port");
+    m_portFilePath      = QDir(tempDir).filePath("q_help_port");
+    m_helpUrlFilePath   = QDir(tempDir).filePath("q_help_url");
+    m_helpQueueFilePath = QDir(tempDir).filePath("q_help_queue");
 
     // ── Layout ────────────────────────────────────────────────────────────
     QVBoxLayout *layout = new QVBoxLayout(this);
@@ -51,16 +56,16 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
     m_webView->setUrl(QUrl("about:blank"));
     layout->addWidget(m_webView, 1);
 
-    // ── File watcher (notified when R writes the port file) ───────────────
+    // ── File watcher (notified when R writes the port file or a help URL) ─
     m_watcher = new QFileSystemWatcher(this);
 
-    // Create the port file so the watcher can track it before R writes to it.
-    {
-        QFile f(m_portFilePath);
+    // Create both watched files so the watcher can track them before R writes.
+    for (const QString &fp : {m_portFilePath, m_helpUrlFilePath}) {
+        QFile f(fp);
         if (!f.exists() && f.open(QIODevice::WriteOnly))
             f.close();
+        m_watcher->addPath(fp);
     }
-    m_watcher->addPath(m_portFilePath);
 
     // Fallback poll every 2 s in case the watcher misses the write
     m_pollTimer = new QTimer(this);
@@ -70,7 +75,7 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
     connect(m_searchBtn, &QPushButton::clicked, this, &HelpPane::onSearchRequested);
     connect(m_searchBar, &QLineEdit::returnPressed, this, &HelpPane::onSearchRequested);
     connect(m_homeBtn,   &QPushButton::clicked,     this, [this]() {
-        navigateTo("/");
+        navigateTo("/doc/html/index.html");
     });
     connect(m_watcher,   &QFileSystemWatcher::fileChanged, this, &HelpPane::onPortFileChanged);
     connect(m_pollTimer, &QTimer::timeout,                 this, [this]() {
@@ -87,22 +92,9 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
 
 void HelpPane::startHelpServer()
 {
-    if (!m_terminal) return;
-
-    // Write the listening port to m_portFilePath.
-    // tools::startDynamicHelp() returns the port (or 0 on failure).
-    // We force-restart so calling this again after a crash still works.
-    QString portFile = QString(m_portFilePath).replace('\\', '/');
-    QString cmd = QString(
-        "local({"
-        "  p <- tools::startDynamicHelp(start = TRUE);"
-        "  writeLines(as.character(p), '%1');"
-        "})"
-    ).arg(portFile);
-
-    m_terminal->executeCommandSilent(cmd);
-
-    // Start the fallback poll until the port is known.
+    // qide::init_help_pane() (called from the R startup script) starts the
+    // dynamic help server and writes the port to m_portFilePath as soon as
+    // R has finished loading. We just poll the port file until it appears.
     if (m_helpPort == 0)
         m_pollTimer->start();
 }
@@ -119,7 +111,7 @@ void HelpPane::onSearchRequested()
 {
     QString topic = m_searchBar->text().trimmed();
     if (topic.isEmpty()) {
-        navigateTo("/");
+        navigateTo("/doc/html/index.html");
         return;
     }
 
@@ -141,13 +133,25 @@ void HelpPane::onSearchRequested()
         }
     }
 
-    // Otherwise use R's built-in search page.
-    QString encoded = QUrl::toPercentEncoding(topic);
-    navigateTo(QString("/doc/html/Search?q=%1&options=3").arg(QString(encoded)));
+    // Let R resolve the topic to a URL and write it to m_helpUrlFilePath.
+    resolveHelpTopic(topic);
 }
 
 void HelpPane::onPortFileChanged(const QString &path)
 {
+    // ── Help-URL file: R resolved a topic → navigate there ───────────────
+    if (path == m_helpUrlFilePath) {
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+        QTextStream in(&f);
+        QString url = in.readLine().trimmed();
+        f.close();
+        if (!url.isEmpty())
+            m_webView->setUrl(QUrl(url));
+        return;
+    }
+
+    // ── Port file: R wrote the help-server port ───────────────────────────
     if (m_helpPort != 0) {
         m_pollTimer->stop();
         return;
@@ -170,6 +174,10 @@ void HelpPane::onPortFileChanged(const QString &path)
 void HelpPane::onLoadFinished(bool ok)
 {
     Q_UNUSED(ok)
+
+    // Restyle the loaded R help page to match the current IDE theme.
+    injectThemeCss();
+
     // Keep the search bar in sync with the current URL so the user can see
     // what topic was resolved.
     QUrl url = m_webView->url();
@@ -185,8 +193,88 @@ void HelpPane::onLoadFinished(bool ok)
         m_searchBar->setText(m.captured(1) + "::" + m.captured(2));
 }
 
-// ── Private helpers ───────────────────────────────────────────────────────────
+// ── Theme ─────────────────────────────────────────────────────────────────────
 
+void HelpPane::setTheme(const EditorTheme & /*theme*/)
+{
+    // Re-inject CSS using the current ThemeManager state. Cheap and avoids
+    // having to cache the theme inside HelpPane.
+    injectThemeCss();
+}
+
+void HelpPane::injectThemeCss()
+{
+    if (!m_webView || !m_webView->page()) return;
+
+    const EditorTheme theme = ThemeManager::instance().currentTheme();
+    const QColor bg   = theme.background;
+    const QColor fg   = theme.foreground;
+    const QColor link = theme.function.isValid() ? theme.function : theme.keyword;
+    const QColor codeBg = theme.lineNumberBg.isValid() ? theme.lineNumberBg
+                                                       : bg.lighter(115);
+    const QColor border = fg.darker(150);
+
+    auto rgba = [](const QColor &c, qreal a = 1.0) {
+        return QString("rgba(%1,%2,%3,%4)")
+            .arg(c.red()).arg(c.green()).arg(c.blue()).arg(a);
+    };
+
+    const QString css = QString(R"CSS(
+        html, body { background: %1 !important; color: %2 !important; }
+        body { font-family: sans-serif; }
+        a, a:visited { color: %3 !important; }
+        a:hover { text-decoration: underline; }
+        h1, h2, h3, h4, h5, h6, table, tr, td, th, dt, dd, p, li, span, div {
+            color: %2 !important;
+            background: transparent !important;
+            border-color: %4 !important;
+        }
+        pre, code, kbd, samp, tt {
+            background: %5 !important;
+            color: %2 !important;
+            border: 1px solid %4 !important;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        pre { padding: 8px; overflow: auto; }
+        table { border-collapse: collapse; }
+        table, th, td { border: 1px solid %4 !important; }
+        hr { border-color: %4 !important; }
+        img { filter: none; }
+    )CSS").arg(rgba(bg), rgba(fg), rgba(link), rgba(border), rgba(codeBg));
+
+    // Strip newlines so we can embed the CSS literal in a JS string safely.
+    QString cssOneLine = css;
+    cssOneLine.replace('\n', ' ').replace('\r', ' ').replace('\\', "\\\\").replace('\'', "\\'");
+
+    const QString js = QString(
+        "(function(){"
+        "  var id = 'q-ide-theme-style';"
+        "  var s = document.getElementById(id);"
+        "  if (!s) { s = document.createElement('style'); s.id = id;"
+        "            document.head && document.head.appendChild(s); }"
+        "  s.textContent = '%1';"
+        "})();"
+    ).arg(cssOneLine);
+
+    m_webView->page()->runJavaScript(js);
+}
+
+// ── Private helpers ───────────────────────────────────────────────────────────
+void HelpPane::resolveHelpTopic(const QString &topic)
+{
+    // Silent channel: write the topic to the queue file. The qide R package
+    // (init_help_pane) polls this file via later::later() and writes the
+    // resolved URL to m_helpUrlFilePath without ever touching stdin/stdout.
+    QFile f(m_helpQueueFilePath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        qWarning() << "helppane: cannot write queue file" << m_helpQueueFilePath;
+        return;
+    }
+    QTextStream out(&f);
+    out << topic << "\n";
+    f.close();
+}
 void HelpPane::navigateTo(const QString &path)
 {
     if (m_helpPort == 0) return;
@@ -201,5 +289,5 @@ void HelpPane::applyPort(int port)
     qDebug() << "R help server running on port" << port;
 
     // Show the help home page.
-    navigateTo("/");
+    navigateTo("/doc/html/index.html");
 }

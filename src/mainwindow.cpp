@@ -1049,7 +1049,12 @@ void MainWindow::changeTheme()
                 terminal->setTheme(theme);
             }
         }
-        
+
+        // Apply to the R help pane (restyle rendered docs).
+        if (helpPane) {
+            helpPane->setTheme(theme);
+        }
+
         qDebug() << "Theme applied successfully:" << selectedTheme;
     }
 }

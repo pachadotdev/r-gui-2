@@ -3,4 +3,6 @@
 export(clear)
 export(get_env_info)
 export(init_monitor)
+export(resolve_help_url)
 export(update_env)
+export(init_help_pane)
