@@ -11,7 +11,7 @@ on:
 jobs:
   build-ubuntu:
     name: Build and package for Ubuntu
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       # ── 1. Source code ────────────────────────────────────────────────────
@@ -19,21 +19,18 @@ jobs:
         uses: actions/checkout@v4
 
       # ── 2. Build environment ──────────────────────────────────────────────
-      # install-qt-action installs Qt from the official Qt archive, sets Qt6_DIR
-      # so CMake finds it automatically, and handles Linux apt dependencies.
-      # WebChannel ships in the base package; only qtwebengine is extra.
+      # Ubuntu 24.04 (Noble) ships all three Qt6 dev packages in universe,
+      # so no external Qt installer is needed.
       # r-base-dev is required so CMake can call `R CMD config --ldflags`.
-      - name: Install Qt6
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.8.3'
-          modules: 'qtwebengine'
-          cache: 'true'
-
-      - name: Install R
+      - name: Set up environment on Ubuntu
         run: |
           sudo apt-get update
-          sudo apt-get install -y r-base r-base-dev
+          sudo apt-get install -y \
+            qt6-base-dev \
+            qt6-webengine-dev \
+            qt6-webchannel-dev \
+            r-base \
+            r-base-dev
 
       # ── 3. Configure & build ──────────────────────────────────────────────
       - name: Configure CMake
@@ -79,7 +76,7 @@ jobs:
           Priority: optional
           Architecture: amd64
           Maintainer: Q R IDE Project
-          Depends: libqt6core6, libqt6widgets6, libqt6gui6, libqt6network6, libqt6webenginewidgets6, libqt6webchannel6, r-base
+          Depends: libqt6core6t64, libqt6widgets6t64, libqt6gui6t64, libqt6network6t64, libqt6webenginewidgets6, libqt6webchannel6t64, r-base
           Description: Q R IDE
            A lightweight Qt-based IDE for the R programming language.
           EOF
