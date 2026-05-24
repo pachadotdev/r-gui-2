@@ -1,0 +1,91 @@
+name: Build Ubuntu Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string (e.g. 1.2.3)'
+        required: false
+        default: '0.0.0-dev'
+
+jobs:
+  build-ubuntu:
+    name: Build and package for Ubuntu
+    runs-on: ubuntu-22.04
+
+    steps:
+      # ── 1. Source code ────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Build environment ──────────────────────────────────────────────
+      # qt6-webengine-dev covers Qt6WebEngineWidgets + Qt6WebEngineCore.
+      # r-base-dev is required so that CMake can call `R CMD config --ldflags`.
+      - name: Set up environment on Ubuntu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qt6-base-dev \
+            qt6-webengine-dev \
+            qt6-webchannel-dev \
+            r-base \
+            r-base-dev
+
+      # ── 3. Configure & build ──────────────────────────────────────────────
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      # ── 4. Create DEB package ─────────────────────────────────────────────
+      # gogh-themes and fonts are installed next to the binary (per cmake
+      # install rules), so they land at /usr/bin/gogh-themes and /usr/bin/fonts
+      # which is where the runtime expects to find them (./gogh-themes relative
+      # to the binary).
+      - name: Create DEB package
+        run: |
+          PKG=package
+          mkdir -p $PKG/usr/bin
+          mkdir -p $PKG/usr/share/applications
+          mkdir -p $PKG/DEBIAN
+
+          cp build/bin/q           $PKG/usr/bin/q
+          cp -r build/bin/gogh-themes $PKG/usr/bin/gogh-themes
+          cp -r build/bin/fonts       $PKG/usr/bin/fonts
+
+          cat > $PKG/usr/share/applications/q-r-ide.desktop << 'EOF'
+          [Desktop Entry]
+          Version=1.0
+          Name=Q R IDE
+          Comment=A lightweight Qt-based IDE for R
+          Exec=/usr/bin/q
+          Icon=utilities-terminal
+          Type=Application
+          Categories=Development;IDE;
+          MimeType=text/x-r-source;text/x-r;
+          EOF
+
+          cat > $PKG/DEBIAN/control << EOF
+          Package: q-r-ide
+          Version: ${{ inputs.version }}
+          Section: devel
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Q R IDE Project
+          Depends: libqt6core6, libqt6widgets6, libqt6gui6, libqt6network6, libqt6webenginewidgets6, libqt6webchannel6, r-base
+          Description: Q R IDE
+           A lightweight Qt-based IDE for the R programming language.
+          EOF
+
+          dpkg-deb --build $PKG q-r-ide-${{ inputs.version }}-ubuntu.deb
+
+      # ── 5. Upload artifact ────────────────────────────────────────────────
+      - name: Upload DEB package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Q-R-IDE-${{ inputs.version }}-Ubuntu
+          path: q-r-ide-*-ubuntu.deb
+          if-no-files-found: error

@@ -148,7 +148,7 @@ void MainWindow::createMenus()
     codeMenu->addSeparator();
     
     QAction *sourceAct = new QAction(tr("Source File"), this);
-    sourceAct->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_S);
+    sourceAct->setShortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_R);
     connect(sourceAct, &QAction::triggered, this, &MainWindow::sourceFile);
     codeMenu->addAction(sourceAct);
     
@@ -498,7 +498,8 @@ void MainWindow::about()
 {
     QMessageBox::about(this, "About Q",
                       "Q - Simple R IDE\n\n"
-                      "A Qt-based IDE for R programming.");
+                      "A Qt-based IDE for R programming.\n\n"
+                      "Released under the Apache 2.0 License.");
 }
 
 void MainWindow::setDefaultLayoutSizes()

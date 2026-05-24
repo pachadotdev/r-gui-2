@@ -1,0 +1,94 @@
+name: Build macOS Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string (e.g. 1.2.3)'
+        required: false
+        default: '0.0.0-dev'
+
+jobs:
+  build-mac:
+    name: Build and package for macOS
+    runs-on: macos-13
+
+    steps:
+      # ── 1. Source code ────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Qt6 build environment ──────────────────────────────────────────
+      # brew install qt6 brings in the full Qt6 suite including WebEngine and
+      # WebChannel, which q requires.  R is pre-installed on macos-13 runners.
+      - name: Set up Qt6 on macOS
+        run: |
+          brew install qt6
+          echo "$(brew --prefix qt6)/bin" >> $GITHUB_PATH
+
+      # ── 3. Configure & build ──────────────────────────────────────────────
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qt6)"
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.logicalcpu)
+
+      # ── 4. Create .app bundle ─────────────────────────────────────────────
+      # The binary resolves gogh-themes and fonts as ./gogh-themes and ./fonts
+      # relative to itself, so both directories must live inside Contents/MacOS.
+      - name: Create .app bundle
+        run: |
+          mkdir -p Q.app/Contents/MacOS
+          mkdir -p Q.app/Contents/Resources
+
+          cp build/bin/q Q.app/Contents/MacOS/
+          cp -r build/bin/gogh-themes Q.app/Contents/MacOS/gogh-themes
+          cp -r build/bin/fonts       Q.app/Contents/MacOS/fonts
+          cp README.md                Q.app/Contents/Resources/
+
+          cat > Q.app/Contents/Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>q</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.pacha.q-r-ide</string>
+            <key>CFBundleName</key>
+            <string>Q R IDE</string>
+            <key>CFBundleVersion</key>
+            <string>${{ inputs.version }}</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+          </dict>
+          </plist>
+          EOF
+
+      # ── 5. Bundle Qt frameworks ───────────────────────────────────────────
+      - name: Bundle Qt frameworks (macdeployqt)
+        run: |
+          "$(brew --prefix qt6)/bin/macdeployqt" Q.app
+
+      # ── 6. Create DMG ─────────────────────────────────────────────────────
+      - name: Create DMG
+        run: |
+          mkdir -p dmg-root
+          cp -R Q.app dmg-root/
+          hdiutil create \
+            -volname "Q R IDE" \
+            -srcfolder dmg-root \
+            -ov \
+            -format UDZO \
+            q-r-ide-${{ inputs.version }}-mac.dmg
+
+      # ── 7. Upload artifact ────────────────────────────────────────────────
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Q-R-IDE-${{ inputs.version }}-macOS
+          path: q-r-ide-*-mac.dmg
+          if-no-files-found: error
