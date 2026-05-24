@@ -19,17 +19,21 @@ jobs:
         uses: actions/checkout@v4
 
       # ── 2. Build environment ──────────────────────────────────────────────
-      # qt6-webengine-dev covers Qt6WebEngineWidgets + Qt6WebEngineCore.
-      # r-base-dev is required so that CMake can call `R CMD config --ldflags`.
-      - name: Set up environment on Ubuntu
+      # install-qt-action installs Qt from the official Qt archive, sets Qt6_DIR
+      # so CMake finds it automatically, and handles Linux apt dependencies.
+      # WebChannel ships in the base package; only qtwebengine is extra.
+      # r-base-dev is required so CMake can call `R CMD config --ldflags`.
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          modules: 'qtwebengine'
+          cache: 'true'
+
+      - name: Install R
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            qt6-base-dev \
-            qt6-webengine-dev \
-            libqt6webchannel6-dev \
-            r-base \
-            r-base-dev
+          sudo apt-get install -y r-base r-base-dev
 
       # ── 3. Configure & build ──────────────────────────────────────────────
       - name: Configure CMake
