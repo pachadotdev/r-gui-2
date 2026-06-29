@@ -35,7 +35,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , console(nullptr)
 {
-    setWindowTitle("Q - Simple R IDE");
+    setWindowTitle("R GUI 2");
     resize(1200, 800);
     setDockNestingEnabled(true);
     
@@ -330,7 +330,7 @@ void MainWindow::createDockWidgets()
 
     // Plot dock
     QString plotDir = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                          .filePath("q_plots");
+                          .filePath("rgui2_plots");
     plotDock = new QDockWidget(tr("Plots"), this);
     plotDock->setObjectName("plotDock");
     plotPane = new PlotPane(plotDir, this);
@@ -426,7 +426,7 @@ void MainWindow::setupConnections()
 
 void MainWindow::loadSettings()
 {
-    QSettings settings("Q", "Q");
+    QSettings settings("RGUI2", "RGUI2");
     restoreGeometry(settings.value("geometry").toByteArray());
 
     // Restore the shared font size (editors + terminals).
@@ -481,7 +481,7 @@ void MainWindow::loadSettings()
 
 void MainWindow::saveSettings()
 {
-    QSettings settings("Q", "Q");
+    QSettings settings("RGUI2", "RGUI2");
     settings.setValue("geometry", saveGeometry());
     settings.setValue("windowState", saveState(1));
 }
@@ -496,9 +496,9 @@ CodeEditor* MainWindow::getCurrentEditor()
 
 void MainWindow::about()
 {
-    QMessageBox::about(this, "About Q",
-                      "Q - Simple R IDE\n\n"
-                      "A Qt-based IDE for R programming.\n\n"
+    QMessageBox::about(this, "About",
+                      "R GUI 2\n\n"
+                      "A Qt-based software to ease using R.\n\n"
                       "Released under the Apache 2.0 License.");
 }
 
@@ -1091,7 +1091,7 @@ void MainWindow::adjustAllTerminalFontSize(int delta)
     }
 
     // Persist immediately so the size survives across sessions.
-    QSettings settings("Q", "Q");
+    QSettings settings("RGUI2", "RGUI2");
     settings.setValue("globalFontSize", m_globalFontSize);
 }
 

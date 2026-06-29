@@ -10,7 +10,7 @@
 PlotPane::PlotPane(const QString &plotDir, QWidget *parent)
     : QWidget(parent)
     , m_plotDir(plotDir)
-    , m_indexFile(QDir(plotDir).filePath("q_plot_index.txt"))
+    , m_indexFile(QDir(plotDir).filePath("rgui2_plot_index.txt"))
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);

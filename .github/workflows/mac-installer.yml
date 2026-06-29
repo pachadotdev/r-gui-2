@@ -41,15 +41,15 @@ jobs:
       # relative to itself, so both directories must live inside Contents/MacOS.
       - name: Create .app bundle
         run: |
-          mkdir -p Q.app/Contents/MacOS
-          mkdir -p Q.app/Contents/Resources
+          mkdir -p RGUI2/Contents/MacOS
+          mkdir -p RGUI2/Contents/Resources
 
-          cp build/bin/q Q.app/Contents/MacOS/
-          cp -r build/bin/gogh-themes Q.app/Contents/MacOS/gogh-themes
-          cp -r build/bin/fonts       Q.app/Contents/MacOS/fonts
-          cp README.md                Q.app/Contents/Resources/
+          cp build/bin/rgui2 RGUI2/Contents/MacOS/
+          cp -r build/bin/gogh-themes RGUI2/Contents/MacOS/gogh-themes
+          cp -r build/bin/fonts       RGUI2/Contents/MacOS/fonts
+          cp README.md                RGUI2/Contents/Resources/
 
-          cat > Q.app/Contents/Info.plist << 'EOF'
+          cat > RGUI2/Contents/Info.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -57,9 +57,9 @@ jobs:
             <key>CFBundleExecutable</key>
             <string>q</string>
             <key>CFBundleIdentifier</key>
-            <string>com.pacha.q-r-ide</string>
+            <string>com.pacha.r-gui-2</string>
             <key>CFBundleName</key>
-            <string>Q R IDE</string>
+            <string>R GUI 2</string>
             <key>CFBundleVersion</key>
             <string>${{ inputs.version }}</string>
             <key>CFBundlePackageType</key>
@@ -71,24 +71,24 @@ jobs:
       # ── 5. Bundle Qt frameworks ───────────────────────────────────────────
       - name: Bundle Qt frameworks (macdeployqt)
         run: |
-          "$(brew --prefix qt6)/bin/macdeployqt" Q.app
+          "$(brew --prefix qt6)/bin/macdeployqt" RGUI2
 
       # ── 6. Create DMG ─────────────────────────────────────────────────────
       - name: Create DMG
         run: |
           mkdir -p dmg-root
-          cp -R Q.app dmg-root/
+          cp -R RGUI2 dmg-root/
           hdiutil create \
-            -volname "Q R IDE" \
+            -volname "R GUI 2" \
             -srcfolder dmg-root \
             -ov \
             -format UDZO \
-            q-r-ide-${{ inputs.version }}-mac.dmg
+            r-gui-2-${{ inputs.version }}-mac.dmg
 
       # ── 7. Upload artifact ────────────────────────────────────────────────
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
-          name: Q-R-IDE-${{ inputs.version }}-macOS
-          path: q-r-ide-*-mac.dmg
+          name: R-GUI-2-${{ inputs.version }}-macOS
+          path: r-gui-2-*-mac.dmg
           if-no-files-found: error

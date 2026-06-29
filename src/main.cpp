@@ -5,9 +5,9 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     
-    app.setApplicationName("Q");
-    app.setApplicationVersion("1.0.0");
-    app.setOrganizationName("Q");
+    app.setApplicationName("RGUI2");
+    app.setApplicationVersion("0.1.0");
+    app.setOrganizationName("RGUI2");
     app.setDesktopFileName("q");  // Without .desktop suffix
     
     // Suppress portal registration warning (app not installed as a .desktop entry)

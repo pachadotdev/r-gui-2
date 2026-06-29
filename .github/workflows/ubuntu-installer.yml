@@ -57,10 +57,10 @@ jobs:
           cp -r build/bin/gogh-themes $PKG/usr/bin/gogh-themes
           cp -r build/bin/fonts       $PKG/usr/bin/fonts
 
-          cat > $PKG/usr/share/applications/q-r-ide.desktop << 'EOF'
+          cat > $PKG/usr/share/applications/r-gui-2.desktop << 'EOF'
           [Desktop Entry]
-          Version=1.0
-          Name=Q R IDE
+          Version=0.1
+          Name=R GUI 2
           Comment=A lightweight Qt-based IDE for R
           Exec=/usr/bin/q
           Icon=utilities-terminal
@@ -70,23 +70,23 @@ jobs:
           EOF
 
           cat > $PKG/DEBIAN/control << EOF
-          Package: q-r-ide
+          Package: r-gui-2
           Version: ${{ inputs.version }}
           Section: devel
           Priority: optional
           Architecture: amd64
-          Maintainer: Q R IDE Project
+          Maintainer: Mauricio Vargas Sepulveda
           Depends: libqt6core6t64, libqt6widgets6t64, libqt6gui6t64, libqt6network6t64, libqt6webenginewidgets6, libqt6webchannel6t64, r-base
-          Description: Q R IDE
+          Description: R GUI 2
            A lightweight Qt-based IDE for the R programming language.
           EOF
 
-          dpkg-deb --build $PKG q-r-ide-${{ inputs.version }}-ubuntu.deb
+          dpkg-deb --build $PKG r-gui-2-${{ inputs.version }}-ubuntu.deb
 
       # ── 5. Upload artifact ────────────────────────────────────────────────
       - name: Upload DEB package
         uses: actions/upload-artifact@v4
         with:
-          name: Q-R-IDE-${{ inputs.version }}-Ubuntu
-          path: q-r-ide-*-ubuntu.deb
+          name: R-GUI-2-${{ inputs.version }}-Ubuntu
+          path: r-gui-2-*-ubuntu.deb
           if-no-files-found: error

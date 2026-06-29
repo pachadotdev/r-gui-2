@@ -1,9 +1,9 @@
-pkgname=q-r-ide
+pkgname=r-gui-2
 pkgver=0.0.1
 pkgrel=1
-pkgdesc="Q - A simple Qt-based R IDE"
+pkgdesc="R GUI 2 - Made with Qt"
 arch=('x86_64')
-url="https://github.com/yourusername/q"
+url="https://github.com/yourusername/r-gui-2"
 license=('Apache-2.0')
 depends=('r>=4.0.0' 'qt6-base')
 makedepends=('git' 'cmake>=3.16' 'gcc')
@@ -31,7 +31,7 @@ build() {
     cd build
     
     # Configure
-    cmake ../Q \
+    cmake ../r-gui-2 \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr
     

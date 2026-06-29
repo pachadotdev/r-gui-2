@@ -1,5 +1,5 @@
 ; ============================================================
-; Q R IDE – Windows NSIS Installer Script
+; R GUI 2 – Windows NSIS Installer Script
 ; Build with:
 ;   makensis /DAPP_VERSION=1.2.3 windows-installer.nsi
 ; ============================================================
@@ -8,15 +8,15 @@
   !define APP_VERSION "1.0.0"
 !endif
 
-!define APP_NAME        "Q R IDE"
-!define APP_EXE         "q.exe"
-!define APP_PUBLISHER   "Q R IDE Project"
-!define REG_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\Q-R-IDE"
-!define REG_APP_KEY     "Software\Q-R-IDE"
+!define APP_NAME        "R GUI 2"
+!define APP_EXE         "rgui2.exe"
+!define APP_PUBLISHER   "R GUI 2"
+!define REG_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\R-GUI-2"
+!define REG_APP_KEY     "Software\R-GUI-2"
 
 Name          "${APP_NAME} ${APP_VERSION}"
-OutFile       "Q-R-IDE-${APP_VERSION}-Setup.exe"
-InstallDir    "$PROGRAMFILES64\Q R IDE"
+OutFile       "R-GUI-2-${APP_VERSION}-Setup.exe"
+InstallDir    "$PROGRAMFILES64\R GUI 2"
 InstallDirRegKey HKLM "${REG_APP_KEY}" "InstallLocation"
 RequestExecutionLevel admin
 Unicode True
@@ -30,11 +30,11 @@ Unicode True
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
 !define MUI_WELCOMEPAGE_TEXT \
   "This wizard will install ${APP_NAME} ${APP_VERSION} on your computer.$\r$\n$\r$\n\
-   Q is a lightweight Qt-based IDE for the R programming language.$\r$\n$\r$\n\
-   R must already be installed. Download it from https://www.r-project.org before using Q.$\r$\n$\r$\n\
+   R GUI 2 is a lightweight Qt-based IDE for the R programming language.$\r$\n$\r$\n\
+   R must already be installed. Download it from https://www.r-project.org before using R GUI 2.$\r$\n$\r$\n\
    Click Next to continue."
 !define MUI_FINISHPAGE_RUN         "$INSTDIR\${APP_EXE}"
-!define MUI_FINISHPAGE_RUN_TEXT    "Launch Q R IDE"
+!define MUI_FINISHPAGE_RUN_TEXT    "Launch R GUI 2"
 !define MUI_FINISHPAGE_SHOWREADME  "$INSTDIR\README.md"
 
 ; ── Installer pages ───────────────────────────────────────────────────────────
@@ -70,14 +70,14 @@ Function CheckRInstalled
       "R was not found on your PATH.$\r$\n$\r$\n\
        Please install R from https://www.r-project.org and re-run this installer, \
        or install R after this installer completes and then run:$\r$\n$\r$\n\
-       Rscript -e ""install.packages('$INSTDIR\qiderpkg', repos=NULL, type='source')"""
+       Rscript -e ""install.packages('$INSTDIR\rgui2pkg', repos=NULL, type='source')"""
   ${EndIf}
 FunctionEnd
 
 ; ═══════════════════════════════════════════════════════════════════════════════
 ; Main install section
 ; ═══════════════════════════════════════════════════════════════════════════════
-Section "Q R IDE (required)" SecMain
+Section "R GUI 2 (required)" SecMain
   SectionIn RO   ; cannot be deselected
 
   ; ── Application files (exe + Qt6 DLLs + MinGW runtime) ──────────────────
@@ -95,17 +95,17 @@ Section "Q R IDE (required)" SecMain
   SetOutPath "$INSTDIR\fonts"
   File /r "staging\fonts\*.*"
 
-  ; ── qide R companion package source (for post-install R setup) ──────────
-  SetOutPath "$INSTDIR\qiderpkg"
-  File /r "staging\qiderpkg\*.*"
+  ; ── rgui2 R companion package source (for post-install R setup) ──────────
+  SetOutPath "$INSTDIR\rgui2pkg"
+  File /r "staging\rgui2pkg\*.*"
 
   SetOutPath "$INSTDIR"
 
   ; ── Shortcuts ────────────────────────────────────────────────────────────
-  CreateDirectory "$SMPROGRAMS\Q R IDE"
-  CreateShortcut  "$SMPROGRAMS\Q R IDE\Q R IDE.lnk"           "$INSTDIR\${APP_EXE}"
-  CreateShortcut  "$SMPROGRAMS\Q R IDE\Uninstall Q R IDE.lnk" "$INSTDIR\uninstall.exe"
-  CreateShortcut  "$DESKTOP\Q R IDE.lnk"                      "$INSTDIR\${APP_EXE}"
+  CreateDirectory "$SMPROGRAMS\R GUI 2"
+  CreateShortcut  "$SMPROGRAMS\R GUI 2\R GUI 2.lnk"           "$INSTDIR\${APP_EXE}"
+  CreateShortcut  "$SMPROGRAMS\R GUI 2\Uninstall R GUI 2.lnk" "$INSTDIR\uninstall.exe"
+  CreateShortcut  "$DESKTOP\R GUI 2.lnk"                      "$INSTDIR\${APP_EXE}"
 
   ; ── Registry (Add/Remove Programs) ──────────────────────────────────────
   WriteRegStr   HKLM "${REG_APP_KEY}"    "InstallLocation"   "$INSTDIR"
@@ -122,10 +122,10 @@ Section "Q R IDE (required)" SecMain
   ; ── Write uninstaller ────────────────────────────────────────────────────
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
-  ; ── Install qide R package if R is present ───────────────────────────────
+  ; ── Install rgui2 R package if R is present ───────────────────────────────
   Call CheckRInstalled
   nsExec::ExecToLog \
-    'Rscript -e "install.packages(\"$INSTDIR\\qiderpkg\", repos=NULL, type=\"source\")"'
+    'Rscript -e "install.packages(\"$INSTDIR\\rgui2pkg\", repos=NULL, type=\"source\")"'
 
 SectionEnd
 
@@ -138,8 +138,8 @@ Section "Uninstall"
   RMDir /r "$INSTDIR"
 
   ; Remove shortcuts
-  Delete    "$DESKTOP\Q R IDE.lnk"
-  RMDir /r  "$SMPROGRAMS\Q R IDE"
+  Delete    "$DESKTOP\R GUI 2.lnk"
+  RMDir /r  "$SMPROGRAMS\R GUI 2"
 
   ; Remove registry entries
   DeleteRegKey HKLM "${REG_UNINST_KEY}"

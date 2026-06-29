@@ -42,7 +42,7 @@ FileBrowser::FileBrowser(QWidget *parent)
     
     // Restore column visibility (default: hide Size and Type)
     {
-        QSettings s("Q", "Q");
+        QSettings s("RGUI2", "RGUI2");
         treeView->setColumnWidth(0, 200);
         treeView->setColumnHidden(1, s.value("filesBrowserCol1Hidden", true).toBool());
         treeView->setColumnHidden(2, s.value("filesBrowserCol2Hidden", true).toBool());
@@ -167,7 +167,7 @@ void FileBrowser::showHeaderContextMenu(const QPoint &pos)
         int col = c.col;
         connect(act, &QAction::toggled, this, [this, col](bool checked) {
             treeView->setColumnHidden(col, !checked);
-            QSettings s("Q", "Q");
+            QSettings s("RGUI2", "RGUI2");
             s.setValue(QString("filesBrowserCol%1Hidden").arg(col), !checked);
         });
     }

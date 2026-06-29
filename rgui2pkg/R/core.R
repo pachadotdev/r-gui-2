@@ -3,11 +3,11 @@
 #' @export
 init_monitor <- function(path) {
   # Store the path in a package-internal environment or options
-  options(qide.env_path = path)
+  options(rgui2.env_path = path)
   
   # Remove existing callback if any
-  if ("qide_env_monitor" %in% getTaskCallbackNames()) {
-    removeTaskCallback("qide_env_monitor")
+  if ("rgui2_env_monitor" %in% getTaskCallbackNames()) {
+    removeTaskCallback("rgui2_env_monitor")
   }
   
   # Register new callback
@@ -15,10 +15,10 @@ init_monitor <- function(path) {
     tryCatch({
       update_env()
     }, error = function(e) {
-      message("Error in qide monitor: ", e$message)
+      message("Error in rgui2 monitor: ", e$message)
     })
     return(TRUE)
-  }, name = "qide_env_monitor")
+  }, name = "rgui2_env_monitor")
   
   # Initial update
   update_env()
@@ -28,9 +28,9 @@ init_monitor <- function(path) {
 #' Update the environment file
 #' @export
 update_env <- function() {
-  path <- getOption("qide.env_path")
+  path <- getOption("rgui2.env_path")
   if (is.null(path)) {
-    message("qide.env_path is not set")
+    message("rgui2.env_path is not set")
     return(FALSE)
   }
   
@@ -221,7 +221,7 @@ init_help_pane <- function(port_file, queue_file, url_file, interval = 0.15) {
     later::later(poll, delay = interval)
   } else {
     # Fallback: only fires after each top-level command, but still silent.
-    cb_name <- "qide_help_pane"
+    cb_name <- "rgui2_help_pane"
     if (cb_name %in% getTaskCallbackNames())
       removeTaskCallback(cb_name)
     addTaskCallback(function(...) {

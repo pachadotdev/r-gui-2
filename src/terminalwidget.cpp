@@ -113,14 +113,14 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
                          const QString &plotDir)
 {
     QString pid      = QString::number(QCoreApplication::applicationPid());
-    QString initPath = QDir::tempPath() + "/q_init_" + pid + ".R";
+    QString initPath = QDir::tempPath() + "/rgui2_init_" + pid + ".R";
     QFile f(initPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
         return {};
 
     QTextStream out(&f);
     out << "local({\n"
-        << "  orig_prof <- Sys.getenv('Q_ORIGINAL_R_PROFILE_USER')\n"
+        << "  orig_prof <- Sys.getenv('RGUI2_ORIGINAL_R_PROFILE_USER')\n"
         << "  if (nzchar(orig_prof) && file.exists(orig_prof)) {\n"
         << "    source(orig_prof)\n"
         << "  } else {\n"
@@ -128,28 +128,28 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "    else if (file.exists(file.path(Sys.getenv('HOME'), '.Rprofile')))\n"
         << "      source(file.path(Sys.getenv('HOME'), '.Rprofile'))\n"
         << "  }\n"
-        << "  if (requireNamespace('qide', quietly=TRUE)) {\n"
-        << "    library(qide)\n"
-        << "    qide::init_monitor(Sys.getenv('Q_ENV_FILE', unset='/tmp/q_env.json'))\n"
-        << "    tryCatch(qide::init_help_pane(\n"
-        << "      port_file  = Sys.getenv('Q_HELP_PORT_FILE',  unset='/tmp/q_help_port'),\n"
-        << "      queue_file = Sys.getenv('Q_HELP_QUEUE_FILE', unset='/tmp/q_help_queue'),\n"
-        << "      url_file   = Sys.getenv('Q_HELP_URL_FILE',   unset='/tmp/q_help_url')\n"
+        << "  if (requireNamespace('rgui2', quietly=TRUE)) {\n"
+        << "    library(rgui2)\n"
+        << "    rgui2::init_monitor(Sys.getenv('RGUI2_ENV_FILE', unset='/tmp/rgui2_env.json'))\n"
+        << "    tryCatch(rgui2::init_help_pane(\n"
+        << "      port_file  = Sys.getenv('RGUI2_HELP_PORT_FILE',  unset='/tmp/rgui2_help_port'),\n"
+        << "      queue_file = Sys.getenv('RGUI2_HELP_QUEUE_FILE', unset='/tmp/rgui2_help_queue'),\n"
+        << "      url_file   = Sys.getenv('RGUI2_HELP_URL_FILE',   unset='/tmp/rgui2_help_url')\n"
         << "    ), error = function(e) NULL)\n"
         << "  }\n"
         << "\n"
-        << "  # ── Q plot capture ────────────────────────────────────────────────────\n"
+        << "  # ── R GUI plot capture ────────────────────────────────────────────────────\n"
         << "  local({\n"
-        << "    plot_dir <- Sys.getenv('Q_PLOT_DIR', unset = file.path(tempdir(), 'q_plots'))\n"
+        << "    plot_dir <- Sys.getenv('RGUI2_PLOT_DIR', unset = file.path(tempdir(), 'rgui2_plots'))\n"
         << "    dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)\n"
-        << "    index_file <- file.path(plot_dir, 'q_plot_index.txt')\n"
+        << "    index_file <- file.path(plot_dir, 'rgui2_plot_index.txt')\n"
         << "    dev_counter  <- 0L\n"
         << "    snap_counter <- 0L\n"
         << "    last_snap_size <- -1L\n"
         << "\n"
         << "    options(device = function(width = 7, height = 5, ...) {\n"
         << "      dev_counter <<- dev_counter + 1L\n"
-        << "      fname <- file.path(plot_dir, sprintf('q_dev_%06d.png', dev_counter))\n"
+        << "      fname <- file.path(plot_dir, sprintf('rgui2_dev_%06d.png', dev_counter))\n"
         << "      grDevices::png(fname,\n"
         << "                     width  = round(width  * 96),\n"
         << "                     height = round(height * 96),\n"
@@ -163,7 +163,7 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "        tryCatch({\n"
         << "          recorded <- grDevices::recordPlot()\n"
         << "          if (length(recorded[[1]]) > 0L) {\n"
-        << "            curr_file <- file.path(plot_dir, 'q_current.png')\n"
+        << "            curr_file <- file.path(plot_dir, 'rgui2_current.png')\n"
         << "            grDevices::png(curr_file, width=800L, height=600L, res=96L)\n"
         << "            grDevices::replayPlot(recorded)\n"
         << "            grDevices::dev.off()\n"
@@ -172,7 +172,7 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "              last_snap_size <<- new_size\n"
         << "              snap_counter <<- snap_counter + 1L\n"
         << "              snap_file <- file.path(plot_dir,\n"
-        << "                                     sprintf('q_snap_%06d.png', snap_counter))\n"
+        << "                                     sprintf('rgui2_snap_%06d.png', snap_counter))\n"
         << "              file.copy(curr_file, snap_file, overwrite = TRUE)\n"
         << "              writeLines(snap_file, index_file)\n"
         << "            }\n"
@@ -180,17 +180,17 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "        }, error = function(e) NULL)\n"
         << "      }\n"
         << "      TRUE\n"
-        << "    }, name = 'q_plot_capture')\n"
+        << "    }, name = 'rgui2_plot_capture')\n"
         << "  })\n"
         << "})\n";
     f.close();
 
     QString origProf = sysEnv.value("R_PROFILE_USER");
     if (!origProf.isEmpty())
-        env << "Q_ORIGINAL_R_PROFILE_USER=" + origProf;
+        env << "RGUI2_ORIGINAL_R_PROFILE_USER=" + origProf;
     env << "R_PROFILE_USER=" + initPath;
-    env << "Q_PLOT_DIR=" + plotDir;
-    env << "Q_ENV_FILE=" + QDir::tempPath() + "/q_env.json";
+    env << "RGUI2_PLOT_DIR=" + plotDir;
+    env << "RGUI2_ENV_FILE=" + QDir::tempPath() + "/rgui2_env.json";
     return initPath;
 }
 
@@ -270,15 +270,15 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
 
     // ── Build child environment ─────────────────────────────────────────────
     QProcessEnvironment sysEnv = QProcessEnvironment::systemEnvironment();
-    QString plotDir = QDir::tempPath() + "/q_plots";
+    QString plotDir = QDir::tempPath() + "/rgui2_plots";
     QDir().mkpath(plotDir);
 
 #ifdef Q_OS_WIN
     // On Windows the child inherits the parent's environment via CreateProcess.
     // We set needed variables directly in the parent before spawning.
-    SetEnvironmentVariableW(L"Q_PLOT_DIR", plotDir.toStdWString().c_str());
-    SetEnvironmentVariableW(L"Q_ENV_FILE",
-        (QDir::tempPath() + "/q_env.json").toStdWString().c_str());
+    SetEnvironmentVariableW(L"RGUI2_PLOT_DIR", plotDir.toStdWString().c_str());
+    SetEnvironmentVariableW(L"RGUI2_ENV_FILE",
+        (QDir::tempPath() + "/rgui2_env.json").toStdWString().c_str());
     {
         QString base = QFileInfo(shellPath).baseName().toLower();
         if (base == "r" || base == "rterm") {
@@ -287,7 +287,7 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
             if (!initPath.isEmpty()) {
                 QString orig = sysEnv.value("R_PROFILE_USER");
                 if (!orig.isEmpty())
-                    SetEnvironmentVariableW(L"Q_ORIGINAL_R_PROFILE_USER",
+                    SetEnvironmentVariableW(L"RGUI2_ORIGINAL_R_PROFILE_USER",
                                             orig.toStdWString().c_str());
                 SetEnvironmentVariableW(L"R_PROFILE_USER",
                                         initPath.toStdWString().c_str());
@@ -303,7 +303,7 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
     envList << "LANG=en_US.UTF-8"
             << "LC_ALL=en_US.UTF-8"
             << "TERM=xterm-256color"
-            << "Q_PLOT_DIR=" + plotDir;
+            << "RGUI2_PLOT_DIR=" + plotDir;
 
     if (QFileInfo(shellPath).fileName().toLower() == "r")
         setupREnv(envList, sysEnv, plotDir);
@@ -624,9 +624,9 @@ void TerminalWidget::executeCommandSilent(const QString &command)
     // text itself is not echoed in the terminal (same trick on all platforms).
     // NOTE: R uses GNU readline which redisplays input; the source(...) line
     // will still be visible in the console. For truly invisible execution,
-    // route the command through the qide::init_help_pane queue mechanism.
+    // route the command through the rgui2::init_help_pane queue mechanism.
     QString pid     = QString::number(QCoreApplication::applicationPid());
-    QString tmpPath = QDir::tempPath() + "/q_cmd_" + pid + ".R";
+    QString tmpPath = QDir::tempPath() + "/rgui2_cmd_" + pid + ".R";
     QFile f(tmpPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
         executeCommand(command);
@@ -649,7 +649,7 @@ void TerminalWidget::executeRCode(const QString &code)
     // Multi-line: write to a temp file and source() with echo=TRUE so R prints
     // each expression with indentation preserved.
     QString pid     = QString::number(QCoreApplication::applicationPid());
-    QString tmpPath = QDir::tempPath() + "/q_run_" + pid + ".R";
+    QString tmpPath = QDir::tempPath() + "/rgui2_run_" + pid + ".R";
     QFile f(tmpPath);
     if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&f);

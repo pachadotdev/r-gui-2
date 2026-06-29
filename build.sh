@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build script for Q - A simple Qt-based R IDE
+# Build script for R GUI 2 - Made with Qt
 # Usage:
-#   ./build.sh           -> Build Q
+#   ./build.sh           -> Build R GUI 2
 #   ./build.sh --clean   -> Clean and rebuild
 #   ./build.sh --package -> Build Arch package with makepkg
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-Q_SRC="${ROOT_DIR}"
+RG2SRC="${ROOT_DIR}"
 BUILD_DIR="${ROOT_DIR}/build"
 
 # Parse arguments
@@ -24,7 +24,7 @@ for arg in "$@"; do
             BUILD_PACKAGE=1
             ;;
         --help)
-            echo "Q build script"
+            echo "R GUI 2 build script"
             echo ""
             echo "Usage: $0 [options]"
             echo ""
@@ -43,12 +43,12 @@ for arg in "$@"; do
 done
 
 echo "=========================================="
-echo "Building Q - Simple R IDE"
+echo "Building R GUI 2 - Simple R IDE"
 echo "=========================================="
 echo ""
 
-if [ ! -d "${Q_SRC}" ]; then
-    echo "Error: ${Q_SRC} not found." >&2
+if [ ! -d "${RG2SRC}" ]; then
+    echo "Error: ${RG2SRC} not found." >&2
     exit 2
 fi
 
@@ -78,8 +78,8 @@ fi
 echo "Installing jsonlite..."
 R -e "if (!require('jsonlite', quietly=TRUE)) install.packages('jsonlite', repos='https://cloud.r-project.org')"
 
-echo "Installing qide R package..."
-R CMD INSTALL qiderpkg
+echo "Installing rgui2pkg R package..."
+R CMD INSTALL rgui2pkg
 
 echo "All dependencies found!"
 
@@ -99,7 +99,7 @@ cd "${BUILD_DIR}"
 # Configure with CMake
 echo ""
 echo "Configuring with CMake..."
-cmake "${Q_SRC}" \
+cmake "${RG2SRC}" \
     -DCMAKE_BUILD_TYPE=Release
 
 # Build
@@ -113,13 +113,13 @@ echo "=========================================="
 echo "Build completed successfully!"
 echo "=========================================="
 echo ""
-echo "Executable: ${BUILD_DIR}/bin/q"
+echo "Executable: ${BUILD_DIR}/bin/rgui2"
 echo ""
 echo "To run the application:"
-echo "  ${BUILD_DIR}/bin/q"
+echo "  ${BUILD_DIR}/bin/rgui2"
 echo ""
 echo "Or use the launcher:"
-echo "  ./q-launch.sh"
+echo "  ./launch.sh"
 echo ""
 
 # Build package if requested
@@ -132,6 +132,6 @@ if [ "${BUILD_PACKAGE}" = "1" ]; then
     makepkg -f
     echo ""
     echo "Package built! Install with:"
-    echo "  sudo pacman -U q-r-ide-*.pkg.tar.zst"
+    echo "  sudo pacman -U r-gui-2-*.pkg.tar.zst"
     echo ""
 fi

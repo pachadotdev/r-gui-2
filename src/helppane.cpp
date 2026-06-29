@@ -18,12 +18,12 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
     , m_helpPort(0)
 {
     // ── Temp files R reads/writes ─────────────────────────────────────────
-    // These paths must match Q_HELP_PORT_FILE / Q_HELP_QUEUE_FILE /
-    // Q_HELP_URL_FILE in terminalwidget.cpp's setupREnv().
+    // These paths must match RGUI2_HELP_PORT_FILE / RGUI2_HELP_QUEUE_FILE /
+    // RGUI2_HELP_URL_FILE in terminalwidget.cpp's setupREnv().
     QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    m_portFilePath      = QDir(tempDir).filePath("q_help_port");
-    m_helpUrlFilePath   = QDir(tempDir).filePath("q_help_url");
-    m_helpQueueFilePath = QDir(tempDir).filePath("q_help_queue");
+    m_portFilePath      = QDir(tempDir).filePath("rgui2_help_port");
+    m_helpUrlFilePath   = QDir(tempDir).filePath("rgui2_help_url");
+    m_helpQueueFilePath = QDir(tempDir).filePath("rgui2_help_queue");
 
     // ── Layout ────────────────────────────────────────────────────────────
     QVBoxLayout *layout = new QVBoxLayout(this);
@@ -92,7 +92,7 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
 
 void HelpPane::startHelpServer()
 {
-    // qide::init_help_pane() (called from the R startup script) starts the
+    // rgui2::init_help_pane() (called from the R startup script) starts the
     // dynamic help server and writes the port to m_portFilePath as soon as
     // R has finished loading. We just poll the port file until it appears.
     if (m_helpPort == 0)
@@ -288,7 +288,7 @@ void HelpPane::injectThemeCss()
 // ── Private helpers ───────────────────────────────────────────────────────────
 void HelpPane::resolveHelpTopic(const QString &topic)
 {
-    // Silent channel: write the topic to the queue file. The qide R package
+    // Silent channel: write the topic to the queue file. The rgui2 R package
     // (init_help_pane) polls this file via later::later() and writes the
     // resolved URL to m_helpUrlFilePath without ever touching stdin/stdout.
     QFile f(m_helpQueueFilePath);

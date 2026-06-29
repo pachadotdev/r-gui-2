@@ -1,6 +1,6 @@
 format = 2
-pkgname = q-r-ide
-pkgbase = q-r-ide
+pkgname = r-gui-2
+pkgbase = r-gui-2
 pkgver = 1.0.0-1
 pkgarch = x86_64
 pkgbuild_sha256sum = 7de61fd2bc06b8e5fc7a7c54dca761a0ecd6cf9dcdf25ed5da53317469409657

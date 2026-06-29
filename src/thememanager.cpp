@@ -25,7 +25,7 @@ ThemeManager::ThemeManager()
     scanJsonThemes();
     
     // Load saved theme from settings
-    QSettings settings("Q", "Q");
+    QSettings settings("RGUI2", "RGUI2");
     QString savedTheme = settings.value("theme").toString();
     
     if (!savedTheme.isEmpty() && jsonThemeNames.contains(savedTheme)) {
@@ -146,7 +146,7 @@ void ThemeManager::setCurrentTheme(const QString &name)
         applyTheme(theme);
         
         // Save to settings
-        QSettings settings("Q", "Q");
+        QSettings settings("RGUI2", "RGUI2");
         settings.setValue("theme", name);
     }
 }

@@ -50,7 +50,7 @@ EnvironmentPane::EnvironmentPane(TerminalWidget *terminal, QWidget *parent)
     
     // Setup file watcher
     QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    envFilePath = QDir(tempDir).filePath("q_env.json");
+    envFilePath = QDir(tempDir).filePath("rgui2_env.json");
     
     // Ensure file exists so watcher can watch it
     QFile f(envFilePath);
@@ -74,8 +74,8 @@ EnvironmentPane::~EnvironmentPane()
 void EnvironmentPane::refreshEnvironment()
 {
     if (!terminal) return;
-    // terminal->executeCommand("if (requireNamespace('qide', quietly=TRUE)) qide::update_env()");
-    terminal->executeCommand("qide::update_env()");
+    // terminal->executeCommand("if (requireNamespace('rgui2', quietly=TRUE)) rgui2::update_env()");
+    terminal->executeCommand("rgui2::update_env()");
 }
 
 void EnvironmentPane::deleteCheckedItems()
