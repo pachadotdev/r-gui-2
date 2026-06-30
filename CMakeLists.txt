@@ -47,8 +47,6 @@ set(SOURCES
     src/xterm.qrc            # bundles xterm.js, xterm.css, terminal.html
     src/environmentpane.cpp
     src/environmentpane.h
-    src/plotpane.cpp
-    src/plotpane.h
     src/helppane.cpp
     src/helppane.h
 )

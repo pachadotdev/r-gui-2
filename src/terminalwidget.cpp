@@ -109,8 +109,7 @@ private:
 // ── Shared R init-script helper ───────────────────────────────────────────────
 // Writes the R profile init script and populates env list entries.
 
-static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
-                         const QString &plotDir)
+static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv)
 {
     QString pid      = QString::number(QCoreApplication::applicationPid());
     QString initPath = QDir::tempPath() + "/rgui2_init_" + pid + ".R";
@@ -137,51 +136,6 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "      url_file   = Sys.getenv('RGUI2_HELP_URL_FILE',   unset='/tmp/rgui2_help_url')\n"
         << "    ), error = function(e) NULL)\n"
         << "  }\n"
-        << "\n"
-        << "  # ── R GUI plot capture ────────────────────────────────────────────────────\n"
-        << "  local({\n"
-        << "    plot_dir <- Sys.getenv('RGUI2_PLOT_DIR', unset = file.path(tempdir(), 'rgui2_plots'))\n"
-        << "    dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)\n"
-        << "    index_file <- file.path(plot_dir, 'rgui2_plot_index.txt')\n"
-        << "    dev_counter  <- 0L\n"
-        << "    snap_counter <- 0L\n"
-        << "    last_snap_size <- -1L\n"
-        << "\n"
-        << "    options(device = function(width = 7, height = 5, ...) {\n"
-        << "      dev_counter <<- dev_counter + 1L\n"
-        << "      fname <- file.path(plot_dir, sprintf('rgui2_dev_%06d.png', dev_counter))\n"
-        << "      grDevices::png(fname,\n"
-        << "                     width  = round(width  * 96),\n"
-        << "                     height = round(height * 96),\n"
-        << "                     res    = 96, ...)\n"
-        << "      grDevices::dev.control(displaylist = 'enable')\n"
-        << "      invisible(NULL)\n"
-        << "    })\n"
-        << "\n"
-        << "    addTaskCallback(function(expr, value, ok, visible) {\n"
-        << "      if (grDevices::dev.cur() != 1L) {\n"
-        << "        tryCatch({\n"
-        << "          recorded <- grDevices::recordPlot()\n"
-        << "          if (length(recorded[[1]]) > 0L) {\n"
-        << "            curr_file <- file.path(plot_dir, 'rgui2_current.png')\n"
-        << "            grDevices::png(curr_file, width=800L, height=600L, res=96L)\n"
-        << "            grDevices::replayPlot(recorded)\n"
-        << "            grDevices::dev.off()\n"
-        << "            new_size <- file.size(curr_file)\n"
-        << "            if (!identical(new_size, last_snap_size)) {\n"
-        << "              last_snap_size <<- new_size\n"
-        << "              snap_counter <<- snap_counter + 1L\n"
-        << "              snap_file <- file.path(plot_dir,\n"
-        << "                                     sprintf('rgui2_snap_%06d.png', snap_counter))\n"
-        << "              file.copy(curr_file, snap_file, overwrite = TRUE)\n"
-        << "              writeLines(snap_file, index_file)\n"
-        << "            }\n"
-        << "          }\n"
-        << "        }, error = function(e) NULL)\n"
-        << "      }\n"
-        << "      TRUE\n"
-        << "    }, name = 'rgui2_plot_capture')\n"
-        << "  })\n"
         << "})\n";
     f.close();
 
@@ -189,7 +143,6 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
     if (!origProf.isEmpty())
         env << "RGUI2_ORIGINAL_R_PROFILE_USER=" + origProf;
     env << "R_PROFILE_USER=" + initPath;
-    env << "RGUI2_PLOT_DIR=" + plotDir;
     env << "RGUI2_ENV_FILE=" + QDir::tempPath() + "/rgui2_env.json";
     return initPath;
 }
@@ -270,20 +223,17 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
 
     // ── Build child environment ─────────────────────────────────────────────
     QProcessEnvironment sysEnv = QProcessEnvironment::systemEnvironment();
-    QString plotDir = QDir::tempPath() + "/rgui2_plots";
-    QDir().mkpath(plotDir);
 
 #ifdef Q_OS_WIN
     // On Windows the child inherits the parent's environment via CreateProcess.
     // We set needed variables directly in the parent before spawning.
-    SetEnvironmentVariableW(L"RGUI2_PLOT_DIR", plotDir.toStdWString().c_str());
     SetEnvironmentVariableW(L"RGUI2_ENV_FILE",
         (QDir::tempPath() + "/rgui2_env.json").toStdWString().c_str());
     {
         QString base = QFileInfo(shellPath).baseName().toLower();
         if (base == "r" || base == "rterm") {
             QStringList dummy;
-            QString initPath = setupREnv(dummy, sysEnv, plotDir);
+            QString initPath = setupREnv(dummy, sysEnv);
             if (!initPath.isEmpty()) {
                 QString orig = sysEnv.value("R_PROFILE_USER");
                 if (!orig.isEmpty())
@@ -302,11 +252,10 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
     }
     envList << "LANG=en_US.UTF-8"
             << "LC_ALL=en_US.UTF-8"
-            << "TERM=xterm-256color"
-            << "RGUI2_PLOT_DIR=" + plotDir;
+            << "TERM=xterm-256color";
 
     if (QFileInfo(shellPath).fileName().toLower() == "r")
-        setupREnv(envList, sysEnv, plotDir);
+        setupREnv(envList, sysEnv);
 #endif
 
     // ── Set up QWebChannel ──────────────────────────────────────────────────

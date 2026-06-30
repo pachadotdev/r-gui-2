@@ -11,7 +11,6 @@ class CodeEditor;
 class FileBrowser;
 class TerminalWidget;
 class EnvironmentPane;
-class PlotPane;
 class HelpPane;
 
 class MainWindow : public QMainWindow
@@ -61,7 +60,6 @@ private:
     TerminalWidget  *console     = nullptr;
     FileBrowser     *fileBrowser = nullptr;
     EnvironmentPane *envPane     = nullptr;
-    PlotPane        *plotPane    = nullptr;
     HelpPane        *helpPane    = nullptr;
 
     // Menus

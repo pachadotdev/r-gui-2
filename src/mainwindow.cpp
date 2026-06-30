@@ -3,7 +3,6 @@
 #include "filebrowser.h"
 #include "terminalwidget.h"
 #include "environmentpane.h"
-#include "plotpane.h"
 #include "helppane.h"
 #include "thememanager.h"
 
@@ -18,7 +17,6 @@
 #include <QMenu>
 #include <QFileInfo>
 #include <QTimer>
-#include <QStandardPaths>
 #include <QApplication>
 #include <QSplitter>
 #include <QEvent>
@@ -68,18 +66,14 @@ MainWindow::MainWindow(QWidget *parent)
     m_centerSplitter->addWidget(consoleTabs);
     m_centerSplitter->setChildrenCollapsible(false);
 
-    // ── Left: file browser ────────────────────────────────────────────────────
+    // ── Left: file browser ───────────────────────────────────────────────────
     fileBrowser = new FileBrowser(this);
 
-    // ── Right: tabbed pane (Help / Environment / Plots) ──────────────────────
-    QString plotDir = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                          .filePath("rgui2_plots");
+    // ── Right: tabbed pane (Help / Environment) ──────────────────────────────
     envPane  = new EnvironmentPane(console, this);
-    plotPane = new PlotPane(plotDir, this);
     helpPane = new HelpPane(console, this);
     m_rightTabs = new QTabWidget(this);
     m_rightTabs->addTab(envPane,   tr("Environment"));
-    m_rightTabs->addTab(plotPane,  tr("Plots"));
     m_rightTabs->addTab(helpPane,  tr("Help"));
 
     // ── Outer horizontal splitter (left | center | right) ────────────────────

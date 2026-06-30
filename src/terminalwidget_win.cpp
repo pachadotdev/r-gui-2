@@ -240,11 +240,6 @@ void TerminalWidget::startPty(const QString &shell, const QStringList &args)
     pty->hPtyIn  = hIn_w;
     pty->hPtyOut = hOut_r;
 
-    // Set RGUI2_PLOT_DIR so R's plot-capture hook works on Windows too
-    QString plotDir = QDir::tempPath() + "/rgui2_plots";
-    QDir().mkpath(plotDir);
-    SetEnvironmentVariableW(L"RGUI2_PLOT_DIR", plotDir.toStdWString().c_str());
-
     // If launching R/Rterm, inject the same init script the Unix build uses
     QString baseName = QFileInfo(shell).baseName().toLower();
     if (baseName == "r" || baseName == "rterm") {
@@ -266,35 +261,6 @@ void TerminalWidget::startPty(const QString &shell, const QStringList &args)
                 << "    library(rgui2)\n"
                 << "    rgui2::init_monitor(file.path(tempdir(), 'rgui2_env.json'))\n"
                 << "  }\n"
-                << "  local({\n"
-                << "    plot_dir <- Sys.getenv('RGUI2_PLOT_DIR', unset=file.path(tempdir(),'rgui2_plots'))\n"
-                << "    dir.create(plot_dir, showWarnings=FALSE, recursive=TRUE)\n"
-                << "    index_file <- file.path(plot_dir, 'rgui2_plot_index.txt')\n"
-                << "    snap_counter <- 0L; last_snap_size <- -1L\n"
-                << "    options(device = function(width=7, height=5, ...) {\n"
-                << "      grDevices::png(file.path(plot_dir, sprintf('rgui2_dev_%06d.png', snap_counter+1L)),\n"
-                << "        width=round(width*96), height=round(height*96), res=96, ...)\n"
-                << "      grDevices::dev.control(displaylist='enable')\n"
-                << "    })\n"
-                << "    addTaskCallback(function(expr, value, ok, visible) {\n"
-                << "      if (grDevices::dev.cur() != 1L) {\n"
-                << "        tryCatch({\n"
-                << "          rec <- grDevices::recordPlot()\n"
-                << "          if (length(rec[[1]]) > 0L) {\n"
-                << "            curr <- file.path(plot_dir, 'rgui2_current.png')\n"
-                << "            grDevices::png(curr, width=800L, height=600L, res=96L)\n"
-                << "            grDevices::replayPlot(rec); grDevices::dev.off()\n"
-                << "            ns <- file.size(curr)\n"
-                << "            if (!identical(ns, last_snap_size)) {\n"
-                << "              last_snap_size <<- ns; snap_counter <<- snap_counter+1L\n"
-                << "              sf <- file.path(plot_dir, sprintf('rgui2_snap_%06d.png', snap_counter))\n"
-                << "              file.copy(curr, sf, overwrite=TRUE); writeLines(sf, index_file)\n"
-                << "            }\n"
-                << "          }\n"
-                << "        }, error=function(e) NULL)\n"
-                << "      }; TRUE\n"
-                << "    }, name='rgui2_plot_capture')\n"
-                << "  })\n"
                 << "})\n";
             f.close();
 
@@ -340,7 +306,7 @@ void TerminalWidget::startPty(const QString &shell, const QStringList &args)
         nullptr, nullptr,
         FALSE,
         EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-        nullptr,    // inherit parent environment (includes RGUI2_PLOT_DIR etc.)
+        nullptr,    // inherit parent environment
         nullptr,    // inherit working directory
         &si.StartupInfo,
         &pi);
