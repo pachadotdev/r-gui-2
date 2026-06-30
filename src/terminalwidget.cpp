@@ -477,6 +477,8 @@ void TerminalWidget::startPty()
             this,   &TerminalWidget::sendOutput,
             Qt::QueuedConnection);
     connect(reader, &PtyReaderThread::finished, reader, &QObject::deleteLater);
+    connect(reader, &PtyReaderThread::finished, this,   &TerminalWidget::onPtyReaderFinished,
+            Qt::QueuedConnection);
     reader->start();
 }
 
@@ -536,10 +538,65 @@ void TerminalWidget::startPty()
             this,   &TerminalWidget::sendOutput,
             Qt::QueuedConnection);
     connect(reader, &PtyReaderThread::finished, reader, &QObject::deleteLater);
+    connect(reader, &PtyReaderThread::finished, this,   &TerminalWidget::onPtyReaderFinished,
+            Qt::QueuedConnection);
     reader->start();
 }
 
 #endif  // Q_OS_WIN
+
+// ── PTY process-exit / auto-restart ──────────────────────────────────────────
+
+void TerminalWidget::onPtyReaderFinished()
+{
+    ptyReader = nullptr;  // already scheduled for deleteLater
+
+#ifndef Q_OS_WIN
+    if (shellPid > 0) {
+        int status;
+        ::waitpid(shellPid, &status, 0);   // child already exited; won't block
+        shellPid = -1;
+    }
+    if (ptyFd >= 0) {
+        ::close(ptyFd);
+        ptyFd = -1;
+    }
+#else
+    if (pty) {
+        if (pty->hProcess != INVALID_HANDLE_VALUE) {
+            WaitForSingleObject(pty->hProcess, 2000);
+            CloseHandle(pty->hProcess); pty->hProcess = INVALID_HANDLE_VALUE;
+        }
+        if (pty->hThread  != INVALID_HANDLE_VALUE) {
+            CloseHandle(pty->hThread);  pty->hThread  = INVALID_HANDLE_VALUE;
+        }
+        if (pty->hPCon)   { ClosePseudoConsole(pty->hPCon); pty->hPCon = nullptr; }
+        if (pty->hPtyIn   != INVALID_HANDLE_VALUE) {
+            CloseHandle(pty->hPtyIn);  pty->hPtyIn  = INVALID_HANDLE_VALUE;
+        }
+        if (pty->hPtyOut  != INVALID_HANDLE_VALUE) {
+            CloseHandle(pty->hPtyOut); pty->hPtyOut = INVALID_HANDLE_VALUE;
+        }
+        delete pty;
+        pty = nullptr;
+    }
+#endif
+
+    // Only auto-restart for R sessions.
+    if (QFileInfo(shellPath).fileName().toLower() != "r")
+        return;
+
+    // Print a notice in the terminal before restarting.
+    page()->runJavaScript(
+        "if(window.term){"
+        "  term.write('\\r\\n\\x1b[33m[R session ended \u2013 restarting\u2026]\\x1b[0m\\r\\n');"
+        "}");
+
+    QTimer::singleShot(600, this, [this]() {
+        startPty();
+        page()->runJavaScript("if(window.fitTerminal) window.fitTerminal();");
+    });
+}
 
 // ── PTY I/O ───────────────────────────────────────────────────────────────────
 

@@ -77,6 +77,7 @@ private:
     void writeToPty(const QByteArray &data);
     void sendOutput(const QByteArray &data);   // queued-connected to reader thread
     void doResize(int cols, int rows);
+    void onPtyReaderFinished();                // auto-restart R when the process exits
 
     class PtyReaderThread *ptyReader = nullptr;  // tracked on all platforms
 
