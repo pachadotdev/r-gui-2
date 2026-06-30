@@ -37,42 +37,63 @@ MainWindow::MainWindow(QWidget *parent)
 {
     setWindowTitle("R GUI 2");
     resize(1200, 800);
-    setDockNestingEnabled(true);
-    
-    // Create central placeholder and make the editor tabs dockable so the
-    // user can drag/float the "Script" pane like other docks.
-    // We set the central widget to nullptr so that the dock widgets (which contain all our content)
-    // expand to fill the entire window, preventing any "unused space" or gaps.
-    setCentralWidget(nullptr);
 
+    // ── Editor tabs (center-top) ────────────────────────────────────────────
     editorTabs = new QTabWidget(this);
     editorTabs->setTabsClosable(true);
     editorTabs->setMovable(true);
-
-    scriptDock = new QDockWidget(tr("Scripts / Notebooks"), this);
-    scriptDock->setObjectName("scriptDock");
-    scriptDock->setWidget(editorTabs);
-    // Allow the script dock to be moved, floated and closed like other docks
-    scriptDock->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
-    // Place the script dock at the top by default so it sits directly
-    // under the menu bar and avoids an empty gap below the menus.
-    addDockWidget(Qt::TopDockWidgetArea, scriptDock);
-
-    // Add first editor tab
     addNewEditorTab();
 
-    // Create dock widgets
-    createDockWidgets();
+    // ── Console tabs (center-bottom) ────────────────────────────────────────
+    consoleTabs = new QTabWidget(this);
+    consoleTabs->setTabsClosable(true);
+    consoleTabs->setMovable(true);
+    console = new TerminalWidget("R", this);
+    consoleTabs->addTab(console, "R Console");
+    connect(console, &TerminalWidget::fontSizeAdjustRequested,
+            this,    &MainWindow::adjustAllTerminalFontSize);
+    consoleTabs->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
+    consoleTabs->tabBar()->setTabButton(0, QTabBar::LeftSide,  nullptr);
+    connect(consoleTabs, &QTabWidget::tabCloseRequested, this, [this](int index) {
+        if (index > 0) {
+            QWidget *w = consoleTabs->widget(index);
+            consoleTabs->removeTab(index);
+            delete w;
+        }
+    });
 
-    // Create menus and toolbars
+    // ── Center splitter (editor top / console bottom) ────────────────────────
+    m_centerSplitter = new QSplitter(Qt::Vertical, this);
+    m_centerSplitter->addWidget(editorTabs);
+    m_centerSplitter->addWidget(consoleTabs);
+    m_centerSplitter->setChildrenCollapsible(false);
+
+    // ── Left: file browser ────────────────────────────────────────────────────
+    fileBrowser = new FileBrowser(this);
+
+    // ── Right: tabbed pane (Help / Environment / Plots) ──────────────────────
+    QString plotDir = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                          .filePath("rgui2_plots");
+    envPane  = new EnvironmentPane(console, this);
+    plotPane = new PlotPane(plotDir, this);
+    helpPane = new HelpPane(console, this);
+    m_rightTabs = new QTabWidget(this);
+    m_rightTabs->addTab(envPane,   tr("Environment"));
+    m_rightTabs->addTab(plotPane,  tr("Plots"));
+    m_rightTabs->addTab(helpPane,  tr("Help"));
+
+    // ── Outer horizontal splitter (left | center | right) ────────────────────
+    m_outerSplitter = new QSplitter(Qt::Horizontal, this);
+    m_outerSplitter->addWidget(fileBrowser);
+    m_outerSplitter->addWidget(m_centerSplitter);
+    m_outerSplitter->addWidget(m_rightTabs);
+    m_outerSplitter->setChildrenCollapsible(false);
+
+    setCentralWidget(m_outerSplitter);
+
     createMenus();
-    // Disable native menu bar integration to avoid layout gaps on some platforms
     menuBar()->setNativeMenuBar(false);
-
-    // Setup connections
     setupConnections();
-
-    // Load settings
     loadSettings();
 }
 
@@ -185,15 +206,7 @@ void MainWindow::createMenus()
     
     // View menu
     viewMenu = menuBar()->addMenu(tr("&View"));
-    viewMenu->addAction(scriptDock->toggleViewAction());
-    viewMenu->addAction(consoleDock->toggleViewAction());
-    viewMenu->addAction(filesDock->toggleViewAction());
-    viewMenu->addAction(envDock->toggleViewAction());
-    viewMenu->addAction(plotDock->toggleViewAction());
-    viewMenu->addAction(helpDock->toggleViewAction());
-    
-    viewMenu->addSeparator();
-    
+
     QAction *themeAct = new QAction(tr("Change &Theme..."), this);
     themeAct->setShortcut(Qt::CTRL | Qt::Key_T);
     connect(themeAct, &QAction::triggered, this, &MainWindow::changeTheme);
@@ -259,8 +272,6 @@ void MainWindow::createMenus()
                 terminal->setInitialFontSize(m_globalFontSize);
                 int index = consoleTabs->addTab(terminal, entry.label);
                 consoleTabs->setCurrentIndex(index);
-                consoleDock->setVisible(true);
-                consoleDock->raise();
             });
             addedLabels << entry.label;
         }
@@ -271,85 +282,6 @@ void MainWindow::createMenus()
     QAction *aboutAct = new QAction(tr("&About"), this);
     connect(aboutAct, &QAction::triggered, this, &MainWindow::about);
     helpMenu->addAction(aboutAct);
-}
-
-void MainWindow::createDockWidgets()
-{
-    // Console dock with tabs
-    consoleDock = new QDockWidget(tr("R Console / Terminals"), this);
-    consoleDock->setObjectName("consoleDock");
-    
-    // Create widget to hold tabs and button
-    QWidget *consoleWidget = new QWidget(this);
-    QVBoxLayout *consoleLayout = new QVBoxLayout(consoleWidget);
-    consoleLayout->setContentsMargins(0, 0, 0, 0);
-    consoleLayout->setSpacing(0);
-    
-    // Create tab widget for consoles/terminals
-    consoleTabs = new QTabWidget(this);
-    consoleTabs->setTabsClosable(true);
-    consoleTabs->setMovable(true);
-
-    consoleLayout->addWidget(consoleTabs);
-    
-    consoleDock->setWidget(consoleWidget);
-    addDockWidget(Qt::BottomDockWidgetArea, consoleDock);
-    
-    // Add R console as first tab
-    console = new TerminalWidget("R", this);
-    consoleTabs->addTab(console, "R Console");
-    connect(console, &TerminalWidget::fontSizeAdjustRequested,
-            this,    &MainWindow::adjustAllTerminalFontSize);
-    // Hide the close button on the R Console tab - it cannot be closed
-    consoleTabs->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
-    consoleTabs->tabBar()->setTabButton(0, QTabBar::LeftSide, nullptr);
-    
-    // Handle tab close
-    connect(consoleTabs, &QTabWidget::tabCloseRequested, this, [this](int index) {
-        // Don't allow closing the R console (index 0)
-        if (index > 0) {
-            QWidget *widget = consoleTabs->widget(index);
-            consoleTabs->removeTab(index);
-            delete widget;
-        }
-    });
-    
-    // Files dock - left column, full height
-    filesDock = new QDockWidget(tr("Files"), this);
-    filesDock->setObjectName("filesDock");
-    fileBrowser = new FileBrowser(this);
-    filesDock->setWidget(fileBrowser);
-    addDockWidget(Qt::LeftDockWidgetArea, filesDock);
-
-    // Environment dock
-    envDock = new QDockWidget(tr("Environment"), this);
-    envDock->setObjectName("envDock");
-    envPane = new EnvironmentPane(console, this);
-    envDock->setWidget(envPane);
-    addDockWidget(Qt::RightDockWidgetArea, envDock);
-
-    // Plot dock
-    QString plotDir = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                          .filePath("rgui2_plots");
-    plotDock = new QDockWidget(tr("Plots"), this);
-    plotDock->setObjectName("plotDock");
-    plotPane = new PlotPane(plotDir, this);
-    plotDock->setWidget(plotPane);
-    addDockWidget(Qt::RightDockWidgetArea, plotDock);
-    tabifyDockWidget(envDock, plotDock);
-
-    // Help dock
-    helpDock = new QDockWidget(tr("Help"), this);
-    helpDock->setObjectName("helpDock");
-    helpPane = new HelpPane(console, this);
-    helpDock->setWidget(helpPane);
-    addDockWidget(Qt::RightDockWidgetArea, helpDock);
-    tabifyDockWidget(plotDock, helpDock);
-
-    setTabPosition(Qt::RightDockWidgetArea, QTabWidget::North);
-
-    // Start with Environment tab raised in the right column
-    envDock->raise();
 }
 
 void MainWindow::setupConnections()
@@ -429,11 +361,8 @@ void MainWindow::loadSettings()
     QSettings settings("RGUI2", "RGUI2");
     restoreGeometry(settings.value("geometry").toByteArray());
 
-    // Restore the shared font size (editors + terminals).
     m_globalFontSize = settings.value("globalFontSize", 11).toInt();
     m_globalFontSize = qBound(6, m_globalFontSize, 32);
-    // Apply once the web views have finished loading their HTML.
-    // setInitialFontSize() handles the deferred-apply case if the page is still loading.
     for (int i = 0; i < consoleTabs->count(); ++i) {
         if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
             tw->setInitialFontSize(m_globalFontSize);
@@ -443,47 +372,38 @@ void MainWindow::loadSettings()
             ed->setFontSize(m_globalFontSize);
     }
 
-    // Use version=1 so any old saved state (version 0, pre-Help pane) is
-    // rejected and the default layout is applied cleanly.
-    if (!restoreState(settings.value("windowState").toByteArray(), 1)) {
-        // First run / layout reset: arrange docks to:
-        // Left column : script (top) and console (bottom)
-        // Right column: Files | Environment | Plots | Help as tabs
-        // Desired widths: left 75%, right 25%
+    // Restore splitter sizes, or fall back to defaults (15 % | 60 % | 25 %).
+    QByteArray outerState  = settings.value("outerSplitter").toByteArray();
+    QByteArray centerState = settings.value("centerSplitter").toByteArray();
 
-        // Files column: full height on the far left.
-        addDockWidget(Qt::LeftDockWidgetArea, filesDock);
-        filesDock->setVisible(true);
+    if (!outerState.isEmpty()) {
+        m_outerSplitter->restoreState(outerState);
+    } else {
+        QTimer::singleShot(0, this, [this]() {
+            int total = m_outerSplitter->width();
+            m_outerSplitter->setSizes({total * 15 / 100,
+                                       total * 60 / 100,
+                                       total * 25 / 100});
+        });
+    }
 
-        // Script and console go in the middle column.
-        addDockWidget(Qt::LeftDockWidgetArea, scriptDock);
-        addDockWidget(Qt::LeftDockWidgetArea, consoleDock);
-        consoleDock->setVisible(true);
-        consoleDock->setFloating(false);
-
-        // Right docks (envDock, plotDock, helpDock) are already tabified from
-        // createDockWidgets() - just make them visible.
-        envDock->setVisible(true);
-        plotDock->setVisible(true);
-        helpDock->setVisible(true);
-        envDock->raise();
-
-        // Build three-column layout:
-        //  [Files (full height)] | [Script / Console] | [Env|Plots|Help tabs]
-        splitDockWidget(filesDock, scriptDock, Qt::Horizontal);  // script right of files
-        splitDockWidget(scriptDock, envDock,   Qt::Horizontal);  // right tab group right of script
-        splitDockWidget(scriptDock, consoleDock, Qt::Vertical);  // console below script
-
-        // Adjust splitter sizes on the next event loop cycle when splitters are available.
-        setDefaultLayoutSizes();
+    if (!centerState.isEmpty()) {
+        m_centerSplitter->restoreState(centerState);
+    } else {
+        QTimer::singleShot(0, this, [this]() {
+            int total = m_centerSplitter->height();
+            m_centerSplitter->setSizes({total * 60 / 100, total * 40 / 100});
+        });
     }
 }
 
 void MainWindow::saveSettings()
 {
     QSettings settings("RGUI2", "RGUI2");
-    settings.setValue("geometry", saveGeometry());
-    settings.setValue("windowState", saveState(1));
+    settings.setValue("geometry",       saveGeometry());
+    settings.setValue("outerSplitter",  m_outerSplitter->saveState());
+    settings.setValue("centerSplitter", m_centerSplitter->saveState());
+    settings.setValue("globalFontSize", m_globalFontSize);
 }
 
 CodeEditor* MainWindow::getCurrentEditor()
@@ -500,73 +420,6 @@ void MainWindow::about()
                       "R GUI 2\n\n"
                       "A Qt-based software to ease using R.\n\n"
                       "Released under the Apache 2.0 License.");
-}
-
-void MainWindow::setDefaultLayoutSizes()
-{
-    // Run after the event loop so QMainWindow has created internal splitters
-    QTimer::singleShot(0, this, [this]() {
-        QList<QSplitter*> splitters = this->findChildren<QSplitter*>();
-        QSplitter *mainH = nullptr;
-        QSplitter *leftV = nullptr;
-
-        // Heuristic: choose the largest horizontal splitter as the main left/right splitter,
-        // and the largest vertical splitter as the left column splitter.
-        int bestH = 0;
-        int bestV = 0;
-
-        for (QSplitter *s : splitters) {
-            if (!s) continue;
-            if (s->orientation() == Qt::Horizontal) {
-                if (s->width() > bestH) { bestH = s->width(); mainH = s; }
-            } else {
-                if (s->height() > bestV) { bestV = s->height(); leftV = s; }
-            }
-        }
-
-        // Set column widths.
-        if (mainH) {
-            int total = qMax(100, mainH->width());
-            QList<int> sizes;
-            if (mainH->count() == 3) {
-                // Three columns: Files 10% | Script/Console 65% | Right pane 25%
-                sizes << total * 10 / 100 << total * 65 / 100 << total * 25 / 100;
-            } else {
-                // Two columns (nested layout): left 75% | right 25%
-                sizes << total * 3 / 4 << total / 4;
-            }
-            mainH->setSizes(sizes);
-            m_mainSplitter = mainH;
-        }
-
-        // Set heights in left column: scripts 60%, console 40%
-        if (leftV) {
-            int total = qMax(100, leftV->height());
-            QList<int> vsizes;
-            vsizes << total * 60 / 100 << total * 40 / 100;
-            leftV->setSizes(vsizes);
-            m_leftSplitter = leftV;
-        }
-
-        // Install event filters on all docks for "magnet" behavior
-        if (scriptDock) scriptDock->installEventFilter(this);
-        if (consoleDock) consoleDock->installEventFilter(this);
-        if (filesDock) filesDock->installEventFilter(this);
-        if (envDock) envDock->installEventFilter(this);
-        if (plotDock) plotDock->installEventFilter(this);
-        if (helpDock) helpDock->installEventFilter(this);
-        if (editorTabs) editorTabs->installEventFilter(this);
-        
-        // Also install on splitters to catch their resize events
-        for (QSplitter *s : splitters) {
-            if (s) s->installEventFilter(this);
-        }
-    });
-}
-
-void MainWindow::resizeEvent(QResizeEvent *event)
-{
-    QMainWindow::resizeEvent(event);
 }
 
 void MainWindow::addNewEditorTab(const QString &title)

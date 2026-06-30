@@ -2,15 +2,10 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QDockWidget>
 #include <QTabWidget>
-#include <QEvent>
-#include <QResizeEvent>
 #include <QMenuBar>
 #include <QStatusBar>
-#include <QPushButton>
-
-class QSplitter;
+#include <QSplitter>
 
 class CodeEditor;
 class FileBrowser;
@@ -40,53 +35,46 @@ private slots:
     void sourceFile();
     void changeTheme();
     void about();
-    void adjustAllTerminalFontSize(int delta);  // +1 or -1; 0 = reset
+    void adjustAllTerminalFontSize(int delta);  // +1 / -1 / 0 = reset
 
 private:
     void createMenus();
-    void createDockWidgets();
     void setupConnections();
     void loadSettings();
     void saveSettings();
-    void setDefaultLayoutSizes();
-    void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
-    // Central widget
-    QTabWidget *editorTabs;
-    QDockWidget *scriptDock;
-    
-    // Dock widgets
-    QDockWidget *consoleDock;
-    QDockWidget *filesDock;
-    QDockWidget *envDock;
-    QDockWidget *plotDock;
-    QDockWidget *helpDock;
-    
-    // Console tabs
-    QTabWidget *consoleTabs;
-    
+    // Editor tabs (center-top)
+    QTabWidget *editorTabs  = nullptr;
+
+    // Console tabs (center-bottom)
+    QTabWidget *consoleTabs = nullptr;
+
+    // Right-panel tab widget (Help / Environment / Plots)
+    QTabWidget *m_rightTabs = nullptr;
+
+    // Splitters
+    QSplitter  *m_outerSplitter  = nullptr;  // horizontal: files | editor+console | right
+    QSplitter  *m_centerSplitter = nullptr;  // vertical:   editorTabs | consoleTabs
+
     // Components
-    TerminalWidget *console;
-    FileBrowser *fileBrowser;
-    EnvironmentPane *envPane;
-    PlotPane *plotPane;
-    HelpPane *helpPane;
-    
+    TerminalWidget  *console     = nullptr;
+    FileBrowser     *fileBrowser = nullptr;
+    EnvironmentPane *envPane     = nullptr;
+    PlotPane        *plotPane    = nullptr;
+    HelpPane        *helpPane    = nullptr;
+
     // Menus
-    QMenu *fileMenu;
-    QMenu *codeMenu;
-    QMenu *viewMenu;
-    QMenu *helpMenu;
-    
-    // Current file tracking
+    QMenu *fileMenu = nullptr;
+    QMenu *codeMenu = nullptr;
+    QMenu *viewMenu = nullptr;
+    QMenu *helpMenu = nullptr;
+
     QString currentFile;
-    int m_globalFontSize = 11;  // shared font size for editors + terminals
-    QString m_currentDir;         // last directory opened via Open Directory
-    QSplitter *m_mainSplitter = nullptr;
-    QSplitter *m_leftSplitter = nullptr;
-    
-    CodeEditor* getCurrentEditor();
+    int     m_globalFontSize = 11;  // shared font size for editors + terminals
+    QString m_currentDir;           // last directory opened via Open Directory
+
+    CodeEditor *getCurrentEditor();
     void addNewEditorTab(const QString &title = "Untitled");
     void updateTabTitle(int index, bool modified);
 };
