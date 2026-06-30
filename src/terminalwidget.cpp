@@ -333,7 +333,7 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
                 "  window.setFontSize(%1);"
                 "} else if (window.resetFontSize && window.adjustFontSize) {"
                 "  window.resetFontSize();"
-                "  window.adjustFontSize(%1 - 11);"
+                "  window.adjustFontSize(%1 - 12);"
                 "}").arg(s));
         }
         QTimer::singleShot(100, this, [this]() {
@@ -351,7 +351,7 @@ void TerminalWidget::setInitialFontSize(int pt)
             "  window.setFontSize(%1);"
             "} else if (window.resetFontSize && window.adjustFontSize) {"
             "  window.resetFontSize();"
-            "  window.adjustFontSize(%1 - 11);"
+            "  window.adjustFontSize(%1 - 12);"
             "}").arg(pt));
     }
 }

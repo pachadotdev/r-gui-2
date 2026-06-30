@@ -17,7 +17,7 @@
 <script>
 var term = new Terminal({
   fontFamily: 'Hack Nerd Font Mono, Cascadia Code, Menlo, monospace',
-  fontSize: 11,
+  fontSize: 16,  // 12pt default (pt × 96/72 = px)
   scrollback: 10000,
   cursorBlink: true
 });
@@ -35,22 +35,23 @@ window.fitTerminal = function() {
 };
 
 // Called from C++ Ctrl+/Ctrl- shortcuts.
-window.adjustFontSize = function(delta) {
-  var newSize = Math.max(6, Math.min(32, term.options.fontSize + delta));
-  term.options.fontSize = newSize;
+window.adjustFontSize = function(deltaPt) {
+  var currentPt = Math.round(term.options.fontSize * 72 / 96);
+  var newPt = Math.max(6, Math.min(32, currentPt + deltaPt));
+  term.options.fontSize = Math.round(newPt * 96 / 72);
   fitAddon.fit();
   if (window._bridge)
     window._bridge.resizePty(term.cols, term.rows);
 };
 window.resetFontSize = function() {
-  term.options.fontSize = 11;
+  term.options.fontSize = 16;  // 12pt default
   fitAddon.fit();
   if (window._bridge)
     window._bridge.resizePty(term.cols, term.rows);
 };
 // Absolute setter so C++ can keep every terminal perfectly in sync.
-window.setFontSize = function(size) {
-  var newSize = Math.max(6, Math.min(32, size|0));
+window.setFontSize = function(pt) {
+  var newSize = Math.round(Math.max(6, Math.min(32, pt)) * 96 / 72);
   term.options.fontSize = newSize;
   fitAddon.fit();
   if (window._bridge)

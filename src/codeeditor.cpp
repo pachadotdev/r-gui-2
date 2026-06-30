@@ -17,7 +17,7 @@ CodeEditor::CodeEditor(QWidget *parent)
     QFont font;
     QStringList fonts = {"Hack", "Noto Sans Mono", "Courier New", "Monospace"};
     for (const QString &fontName : fonts) {
-        font = QFont(fontName, 11);
+        font = QFont(fontName, 12);
         if (QFontInfo(font).family() == fontName) {
             break;
         }

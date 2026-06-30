@@ -361,7 +361,7 @@ void MainWindow::loadSettings()
     QSettings settings("RGUI2", "RGUI2");
     restoreGeometry(settings.value("geometry").toByteArray());
 
-    m_globalFontSize = settings.value("globalFontSize", 11).toInt();
+    m_globalFontSize = settings.value("globalFontSize", 12).toInt();
     m_globalFontSize = qBound(6, m_globalFontSize, 32);
     for (int i = 0; i < consoleTabs->count(); ++i) {
         if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
@@ -425,8 +425,7 @@ void MainWindow::about()
 void MainWindow::addNewEditorTab(const QString &title)
 {
     CodeEditor *editor = new CodeEditor(this);
-    if (m_globalFontSize != 11)
-        editor->setFontSize(m_globalFontSize);
+    editor->setFontSize(m_globalFontSize);
     int index = editorTabs->addTab(editor, title);
     editorTabs->setCurrentIndex(index);
     
@@ -915,9 +914,9 @@ void MainWindow::changeTheme()
 
 void MainWindow::adjustAllTerminalFontSize(int delta)
 {
-    // delta = +1 (bigger), -1 (smaller), 0 (reset to default 11pt)
+    // delta = +1 (bigger), -1 (smaller), 0 (reset to default 12pt)
     if (delta == 0)
-        m_globalFontSize = 11;
+        m_globalFontSize = 12;
     else
         m_globalFontSize = qBound(6, m_globalFontSize + delta, 32);
 

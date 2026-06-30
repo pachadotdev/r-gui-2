@@ -71,7 +71,7 @@ private:
     QMenu *helpMenu = nullptr;
 
     QString currentFile;
-    int     m_globalFontSize = 11;  // shared font size for editors + terminals
+    int     m_globalFontSize = 12;  // shared font size for editors + terminals
     QString m_currentDir;           // last directory opened via Open Directory
 
     CodeEditor *getCurrentEditor();

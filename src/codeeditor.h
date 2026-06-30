@@ -35,7 +35,7 @@ private:
     QWidget *lineNumberArea;
     RSyntaxHighlighter *highlighter;
     EditorTheme currentTheme;
-    int m_fontSize = 11;
+    int m_fontSize = 12;
 };
 
 // Line number area widget
