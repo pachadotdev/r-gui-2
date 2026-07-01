@@ -24,11 +24,11 @@ jobs:
       - name: Install Qt6 with WebEngine
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.3'
+          version: '6.8.3'
           host: 'windows'
           target: 'desktop'
-          arch: 'win64_msvc2019_64'
-          modules: 'qtwebengine qtwebchannel'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtwebengine qtwebchannel qtpositioning'
 
       # ── 3. MSVC x64 developer environment ────────────────────────────────
       - name: Set up MSVC

@@ -1,0 +1,62 @@
+2026-07-01 07:31:20,798 - aqt.helper - DEBUG - helper 139890015861632 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_673/Updates.xml.sha256
+2026-07-01 07:31:37,831 - aqt.helper - DEBUG - helper 140654322514816 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_673/Updates.xml.sha256
+2026-07-01 07:39:01,484 - aqt.main - INFO - installer 140585510472576 aqtinstall(aqt) v3.3.0 on Python 3.14.5 [CPython GCC 16.1.1 20260430]
+2026-07-01 07:39:01,485 - aqt.helper - DEBUG - helper 140585510472576 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_673/Updates.xml.sha256
+2026-07-01 07:39:01,902 - aqt.main - ERROR - installer 140585510472576 The packages ['qt_base', 'qtwebchannel', 'qtwebengine'] were not found while parsing XML of package information!
+==============================Suggested follow-up:==============================
+* Please use 'aqt list-qt linux desktop --arch 6.7.3' to show architectures available.
+* Please use 'aqt list-qt linux desktop --modules 6.7.3 <arch>' to show modules available.
+2026-07-01 07:39:19,022 - aqt.helper - DEBUG - helper 140552906562432 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_673/Updates.xml.sha256
+2026-07-01 07:39:20,231 - aqt.helper - DEBUG - helper 140267845094272 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_673/Updates.xml.sha256
+2026-07-01 07:39:39,875 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/Updates.xml.sha256
+2026-07-01 07:39:40,338 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/683/msvc2019_64/Updates.xml.sha256
+2026-07-01 07:39:40,527 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/683/msvc2019_64/Updates.xml.sha256
+2026-07-01 07:39:40,711 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/683/msvc2019_64/Updates.xml.sha256
+2026-07-01 07:39:40,872 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/683/msvc2019_64/Updates.xml.sha256
+2026-07-01 07:39:41,044 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/683/msvc2019_64/Updates.xml.sha256
+2026-07-01 07:39:41,203 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2019_64/Updates.xml.sha256
+2026-07-01 07:39:41,373 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2019_64/Updates.xml.sha256
+2026-07-01 07:39:41,541 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2019_64/Updates.xml.sha256
+2026-07-01 07:39:41,699 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2019_64/Updates.xml.sha256
+2026-07-01 07:39:41,872 - aqt.helper - DEBUG - helper 139828379908992 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2019_64/Updates.xml.sha256
+2026-07-01 07:39:42,053 - aqt.main - ERROR - installer 139828379908992 No modules available for this request.
+==============================Suggested follow-up:==============================
+* Please use 'aqt list-qt windows desktop' to show versions of Qt available.
+* Please use 'aqt list-qt windows desktop --arch <QT_VERSION>' to list valid architectures.
+2026-07-01 07:39:55,711 - aqt.helper - DEBUG - helper 140610290367360 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/Updates.xml.sha256
+2026-07-01 07:40:08,365 - aqt.helper - DEBUG - helper 140483300637568 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/Updates.xml.sha256
+2026-07-01 07:40:08,819 - aqt.helper - DEBUG - helper 140483300637568 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/683/msvc2022_64/Updates.xml.sha256
+2026-07-01 07:40:09,161 - aqt.helper - DEBUG - helper 140483300637568 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2022_64/Updates.xml.sha256
+2026-07-01 07:40:25,856 - aqt.main - INFO - installer 139967484291968 aqtinstall(aqt) v3.3.0 on Python 3.14.5 [CPython GCC 16.1.1 20260430]
+2026-07-01 07:40:25,857 - aqt.helper - DEBUG - helper 139967484291968 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/Updates.xml.sha256
+2026-07-01 07:40:26,261 - aqt.helper - DEBUG - helper 139967484291968 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2022_64/Updates.xml.sha256
+2026-07-01 07:40:26,610 - aqt.archives - INFO - archives 139967484291968 Found extension qtwebengine
+2026-07-01 07:40:26,610 - aqt.helper - DEBUG - helper 139967484291968 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/683/msvc2022_64/Updates.xml.sha256
+2026-07-01 07:40:26,966 - aqt.archives - INFO - archives 139967484291968 Found extension qtpdf
+2026-07-01 07:40:26,994 - aqt.installer - INFO - installer 139967484291968 DRY RUN: Would download and install the following:
+2026-07-01 07:40:26,994 - aqt.installer - INFO - installer 139967484291968   - qtbase: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:26,994 - aqt.installer - INFO - installer 139967484291968   - qtsvg: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtsvg-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:26,994 - aqt.installer - INFO - installer 139967484291968   - qtdeclarative: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtdeclarative-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:26,995 - aqt.installer - INFO - installer 139967484291968   - qttools: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qttools-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:26,995 - aqt.installer - INFO - installer 139967484291968   - qttranslations: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qttranslations-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:26,995 - aqt.installer - INFO - installer 139967484291968   - d3dcompiler_47: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308d3dcompiler_47-x64.7z -> 6.8.3/msvc2022_64/bin
+2026-07-01 07:40:26,995 - aqt.installer - INFO - installer 139967484291968   - opengl32sw: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308opengl32sw-64-mesa_11_2_2-signed_sha256.7z -> 6.8.3/msvc2022_64/bin
+2026-07-01 07:40:26,995 - aqt.installer - INFO - installer 139967484291968 Total packages: 7
+2026-07-01 07:40:43,787 - aqt.main - INFO - installer 140489507294080 aqtinstall(aqt) v3.3.0 on Python 3.14.5 [CPython GCC 16.1.1 20260430]
+2026-07-01 07:40:43,788 - aqt.helper - DEBUG - helper 140489507294080 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/Updates.xml.sha256
+2026-07-01 07:40:44,201 - aqt.helper - DEBUG - helper 140489507294080 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2022_64/Updates.xml.sha256
+2026-07-01 07:40:44,561 - aqt.archives - INFO - archives 140489507294080 Found extension qtwebengine
+2026-07-01 07:40:44,561 - aqt.helper - DEBUG - helper 140489507294080 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/683/msvc2022_64/Updates.xml.sha256
+2026-07-01 07:40:44,926 - aqt.archives - INFO - archives 140489507294080 Found extension qtpdf
+2026-07-01 07:40:44,946 - aqt.installer - INFO - installer 140489507294080 DRY RUN: Would download and install the following:
+2026-07-01 07:40:44,946 - aqt.installer - INFO - installer 140489507294080   - qtpositioning: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.addons.qtpositioning.win64_msvc2022_64/6.8.3-0-202503201308qtpositioning-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:44,946 - aqt.installer - INFO - installer 140489507294080   - qtwebchannel: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.addons.qtwebchannel.win64_msvc2022_64/6.8.3-0-202503201308qtwebchannel-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:44,946 - aqt.installer - INFO - installer 140489507294080   - qtbase: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:44,946 - aqt.installer - INFO - installer 140489507294080   - qtsvg: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtsvg-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:44,946 - aqt.installer - INFO - installer 140489507294080   - qtdeclarative: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtdeclarative-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:44,946 - aqt.installer - INFO - installer 140489507294080   - qttools: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qttools-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:44,947 - aqt.installer - INFO - installer 140489507294080   - qttranslations: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qttranslations-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:44,947 - aqt.installer - INFO - installer 140489507294080   - d3dcompiler_47: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308d3dcompiler_47-x64.7z -> 6.8.3/msvc2022_64/bin
+2026-07-01 07:40:44,947 - aqt.installer - INFO - installer 140489507294080   - opengl32sw: online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308opengl32sw-64-mesa_11_2_2-signed_sha256.7z -> 6.8.3/msvc2022_64/bin
+2026-07-01 07:40:44,947 - aqt.installer - INFO - installer 140489507294080   - qtwebengine: online/qtsdkrepository/windows_x86/extensions/qtwebengine/683/msvc2022_64/extensions.qtwebengine.683.win64_msvc2022_64/6.8.3-0-202503201424qtwebengine-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z -> 6.8.3/msvc2022_64
+2026-07-01 07:40:44,947 - aqt.installer - INFO - installer 140489507294080 Total packages: 10
