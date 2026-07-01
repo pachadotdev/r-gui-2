@@ -69,8 +69,7 @@ Function CheckRInstalled
     MessageBox MB_ICONINFORMATION|MB_OK \
       "R was not found on your PATH.$\r$\n$\r$\n\
        Please install R from https://www.r-project.org and re-run this installer, \
-       or install R after this installer completes and then run:$\r$\n$\r$\n\
-       Rscript -e ""install.packages('$INSTDIR\rgui2pkg', repos=NULL, type='source')"""
+       or install R after this installer completes and then run:$\r$\n$\r$"
   ${EndIf}
 FunctionEnd
 
