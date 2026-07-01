@@ -27,7 +27,7 @@ jobs:
           version: '6.7.3'
           host: 'windows'
           target: 'desktop'
-          arch: 'win64_msvc2022_64'
+          arch: 'win64_msvc2019_64'
           modules: 'qtwebengine qtwebchannel'
 
       # ── 3. MSVC x64 developer environment ────────────────────────────────
@@ -36,20 +36,14 @@ jobs:
         with:
           arch: x64
 
-      # ── 4. R companion package ────────────────────────────────────────────
-      - name: Install rgui2 R companion package
-        shell: Rscript {0}
-        run: |
-          install.packages("rgui2pkg", repos = NULL, type = "source")
-
-      # ── 5. Derive version string ──────────────────────────────────────────
+      # ── 4. Derive version string ──────────────────────────────────────────
       - name: Compute version
         id: version
         shell: bash
         run: |
           echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
 
-      # ── 6. Configure & build ──────────────────────────────────────────────
+      # ── 5. Configure & build ──────────────────────────────────────────────
       - name: Configure CMake
         shell: pwsh
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -58,24 +52,24 @@ jobs:
         shell: pwsh
         run: cmake --build build -j $env:NUMBER_OF_PROCESSORS
 
-      # ── 7. Stage application files ────────────────────────────────────────
+      # ── 6. Stage application files ────────────────────────────────────────
       - name: Deploy Qt DLLs (windeployqt6)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path installer\staging | Out-Null
-          Copy-Item build\bin\q.exe installer\staging\
+          Copy-Item build\bin\rgui2.exe installer\staging\
 
           # Collect all Qt6 and plugin DLLs next to the executable.
-          windeployqt6 --release --dir installer\staging installer\staging\q.exe
+          windeployqt6 --release --dir installer\staging installer\staging\rgui2.exe
 
       - name: Copy runtime data (themes, fonts, R package)
         shell: pwsh
         run: |
           Copy-Item -Recurse gogh-themes  installer\staging\gogh-themes
           Copy-Item -Recurse fonts        installer\staging\fonts
-          Copy-Item -Recurse qiderpkg     installer\staging\qiderpkg
+          Copy-Item -Recurse rgui2pkg     installer\staging\rgui2pkg
 
-      # ── 8. NSIS installer ─────────────────────────────────────────────────
+      # ── 7. NSIS installer ─────────────────────────────────────────────────
       # NSIS (makensis) is pre-installed on windows-latest runners.
       - name: Build NSIS installer
         shell: cmd
@@ -84,7 +78,7 @@ jobs:
           /DAPP_VERSION=${{ steps.version.outputs.version }}
           installer\windows-installer.nsi
 
-      # ── 9. Publish artifacts ──────────────────────────────────────────────
+      # ── 8. Publish artifacts ──────────────────────────────────────────────
       - name: Upload installer as workflow artifact
         uses: actions/upload-artifact@v4
         with:
