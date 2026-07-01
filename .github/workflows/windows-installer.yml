@@ -13,78 +13,69 @@ jobs:
     name: Build and package for Windows
     runs-on: windows-2025-vs2026
 
-    # All `run:` steps use the MSYS2 MinGW64 shell unless overridden.
-    defaults:
-      run:
-        shell: msys2 {0}
-
     steps:
       # ── 1. Source code ────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. MSYS2 + Qt6 build environment ─────────────────────────────────
-      # The Windows terminal pane uses ConPTY (kernel32.dll, Win10 1809+) so
-      # qtermwidget6 is NOT needed here - only Qt6 base + tools.
-      - name: Set up MSYS2 (MinGW64 + Qt6)
-        uses: msys2/setup-msys2@v2
+      # ── 2. Qt6 + WebEngine (MSVC build from Qt's official mirrors) ────────
+      # Qt WebEngine requires MSVC on Windows (Chromium is MSVC-only).
+      # aqtinstall provides pre-built binaries matching the official Qt installer.
+      - name: Install Qt6 with WebEngine
+        uses: jurplel/install-qt-action@v4
         with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-qt6-base
-            mingw-w64-x86_64-qt6-tools
+          version: '6.7.3'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          modules: 'qtwebengine qtwebchannel'
 
+      # ── 3. MSVC x64 developer environment ────────────────────────────────
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # ── 4. R companion package ────────────────────────────────────────────
       - name: Install rgui2 R companion package
         shell: Rscript {0}
         run: |
           install.packages("rgui2pkg", repos = NULL, type = "source")
 
-      # ── 4. Derive version string ──────────────────────────────────────────
+      # ── 5. Derive version string ──────────────────────────────────────────
       - name: Compute version
         id: version
+        shell: bash
         run: |
           echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
 
-      # ── 5. Configure & build ──────────────────────────────────────────────
+      # ── 6. Configure & build ──────────────────────────────────────────────
       - name: Configure CMake
-        run: |
-          cmake -S . -B build \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH=/mingw64
+        shell: pwsh
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build -j$(nproc)
+        shell: pwsh
+        run: cmake --build build -j $env:NUMBER_OF_PROCESSORS
 
-      # ── 6. Stage application files ────────────────────────────────────────
+      # ── 7. Stage application files ────────────────────────────────────────
       - name: Deploy Qt DLLs (windeployqt6)
+        shell: pwsh
         run: |
-          mkdir -p installer/staging
-          cp build/bin/q.exe installer/staging/
+          New-Item -ItemType Directory -Force -Path installer\staging | Out-Null
+          Copy-Item build\bin\q.exe installer\staging\
 
           # Collect all Qt6 and plugin DLLs next to the executable.
-          windeployqt6 --release --dir installer/staging installer/staging/q.exe
-
-      - name: Copy MinGW runtime DLLs
-        run: |
-          for dll in \
-            libgcc_s_seh-1.dll \
-            libstdc++-6.dll \
-            libwinpthread-1.dll; do
-            cp /mingw64/bin/$dll installer/staging/ 2>/dev/null || true
-          done
+          windeployqt6 --release --dir installer\staging installer\staging\q.exe
 
       - name: Copy runtime data (themes, fonts, R package)
+        shell: pwsh
         run: |
-          cp -r gogh-themes  installer/staging/gogh-themes
-          cp -r fonts         installer/staging/fonts
-          cp -r qiderpkg      installer/staging/qiderpkg
+          Copy-Item -Recurse gogh-themes  installer\staging\gogh-themes
+          Copy-Item -Recurse fonts        installer\staging\fonts
+          Copy-Item -Recurse qiderpkg     installer\staging\qiderpkg
 
-      # ── 7. NSIS installer ─────────────────────────────────────────────────
+      # ── 8. NSIS installer ─────────────────────────────────────────────────
       # NSIS (makensis) is pre-installed on windows-latest runners.
       - name: Build NSIS installer
         shell: cmd
@@ -93,12 +84,10 @@ jobs:
           /DAPP_VERSION=${{ steps.version.outputs.version }}
           installer\windows-installer.nsi
 
-      # ── 8. Publish artifacts ──────────────────────────────────────────────
+      # ── 9. Publish artifacts ──────────────────────────────────────────────
       - name: Upload installer as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: R-GUI-2-${{ steps.version.outputs.version }}-Windows
           path: installer\R-GUI-2-*-Setup.exe
           if-no-files-found: error
-
-
