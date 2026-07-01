@@ -70,7 +70,10 @@ jobs:
           Copy-Item -Recurse rgui2pkg     installer\staging\rgui2pkg
 
       # ── 7. NSIS installer ─────────────────────────────────────────────────
-      # NSIS (makensis) is pre-installed on windows-latest runners.
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis --no-progress -y
+
       - name: Build NSIS installer
         shell: cmd
         run: >
