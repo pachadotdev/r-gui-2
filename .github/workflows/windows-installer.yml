@@ -37,12 +37,11 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-qt6-base
             mingw-w64-x86_64-qt6-tools
-            mingw-w64-x86_64-qt6-webengine
 
       - name: Install rgui2 R companion package
         shell: Rscript {0}
         run: |
-          install.packages("rgui2", repos = NULL, type = "source")
+          install.packages("rgui2pkg", repos = NULL, type = "source")
 
       # ── 4. Derive version string ──────────────────────────────────────────
       - name: Compute version
