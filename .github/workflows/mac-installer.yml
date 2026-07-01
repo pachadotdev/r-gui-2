@@ -20,7 +20,7 @@ jobs:
 
       # ── 2. Qt6 build environment ──────────────────────────────────────────
       # brew install qt6 brings in the full Qt6 suite including WebEngine and
-      # WebChannel, which q requires.  R is pre-installed on macos-13 runners.
+      # WebChannel, which rgui2 requires.  R is pre-installed on macos-13 runners.
       - name: Set up Qt6 on macOS
         run: |
           brew install qt6
@@ -55,7 +55,7 @@ jobs:
           <plist version="1.0">
           <dict>
             <key>CFBundleExecutable</key>
-            <string>q</string>
+            <string>rgui2</string>
             <key>CFBundleIdentifier</key>
             <string>com.pacha.r-gui-2</string>
             <key>CFBundleName</key>

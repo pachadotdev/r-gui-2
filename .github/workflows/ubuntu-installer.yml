@@ -6,7 +6,7 @@ on:
       version:
         description: 'Version string (e.g. 1.2.3)'
         required: false
-        default: '0.0.0-dev'
+        default: '0.1.0'
 
 jobs:
   build-ubuntu:
@@ -53,7 +53,7 @@ jobs:
           mkdir -p $PKG/usr/share/applications
           mkdir -p $PKG/DEBIAN
 
-          cp build/bin/q           $PKG/usr/bin/q
+          cp build/bin/rgui2           $PKG/usr/bin/rgui2
           cp -r build/bin/gogh-themes $PKG/usr/bin/gogh-themes
           cp -r build/bin/fonts       $PKG/usr/bin/fonts
 
@@ -62,7 +62,7 @@ jobs:
           Version=0.1
           Name=R GUI 2
           Comment=A lightweight Qt-based IDE for R
-          Exec=/usr/bin/q
+          Exec=/usr/bin/rgui2
           Icon=utilities-terminal
           Type=Application
           Categories=Development;IDE;
