@@ -47,9 +47,15 @@ By full R setup I mean:
 
 ## Build and test
 
-```
+```bash
 ./build.sh --clean
 ./build/bin/rgui2
+```
+
+*If you build on Ubuntu*: You will need to install extra dependencies
+
+```bash
+sudo apt-get install qt6-webengine-dev qt6-base-dev
 ```
 
 ## Package
@@ -57,7 +63,7 @@ By full R setup I mean:
 I use Manjaro, so this is how I package the app. Please open an issue if you would like an installer
 for Ubuntu, Fedora, or another distribution of the extremely fragmented Linux ecosystem.
 
-```
+```bash
 ./build.sh --package
 sudo pacman -U --noconfirm grog-1.0.0-1-x86_64.pkg.tar.zst
 ```
@@ -65,4 +71,3 @@ sudo pacman -U --noconfirm grog-1.0.0-1-x86_64.pkg.tar.zst
 ## License
 
 R GUI 2 is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
-
