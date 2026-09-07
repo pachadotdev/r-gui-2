@@ -14,10 +14,6 @@
 !define REG_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\R-GUI-2"
 !define REG_APP_KEY     "Software\R-GUI-2"
 
-!ifndef R_VERSION
-  !define R_VERSION "4.5.1"
-!endif
-
 Name          "${APP_NAME} ${APP_VERSION}"
 OutFile       "R-GUI-2-${APP_VERSION}-Setup.exe"
 InstallDir    "$PROGRAMFILES64\R GUI 2"
@@ -39,7 +35,7 @@ Var Rscript
 !define MUI_WELCOMEPAGE_TEXT \
   "This wizard will install ${APP_NAME} ${APP_VERSION} on your computer.$\r$\n$\r$\n\
    R GUI 2 is a lightweight Qt-based IDE for the R programming language.$\r$\n$\r$\n\
-   This installer bundles R ${R_VERSION} with OpenBLAS, Rtools 4.5, and the rgui2 R package.$\r$\n$\r$\n\
+   This installer bundles Rtools 4.5 and the rgui2 R package. An existing R installation is required.$\r$\n$\r$\n\
    Click Next to continue."
 !define MUI_FINISHPAGE_RUN         "$INSTDIR\${APP_EXE}"
 !define MUI_FINISHPAGE_RUN_TEXT    "Launch R GUI 2"
@@ -127,35 +123,26 @@ Section "R GUI 2 (required)" SecMain
 SectionEnd
 
 ; ===============================================================================
-; R + OpenBLAS
+; Pre-built R packages (jsonlite + rgui2) — requires an existing R installation
 ; ===============================================================================
-Section "R ${R_VERSION} with OpenBLAS" SecR
+Section "rgui2 R package (requires existing R installation)" SecRPkg
 
-  DetailPrint "Installing R ${R_VERSION}..."
-  SetOutPath "$TEMP"
-  File "/oname=R-installer.exe" "staging\R-installer.exe"
-  ExecWait '"$TEMP\R-installer.exe" /VERYSILENT /NORESTART /DIR="$PROGRAMFILES64\R\R-${R_VERSION}"'
-  Delete "$TEMP\R-installer.exe"
+  ; Detect an existing R installation via the registry (set by the official
+  ; R-core installer). We do not bundle/install R itself anymore.
+  ReadRegStr $0 HKLM "SOFTWARE\R-core\R64" "InstallPath"
+  ${If} $0 == ""
+    ReadRegStr $0 HKCU "SOFTWARE\R-core\R64" "InstallPath"
+  ${EndIf}
 
-  ; Set R_HOME in the system environment so rgui2 can locate Rterm.exe
-  ; without R needing to be on PATH (the silent installer does not add it).
-  WriteRegExpandStr HKLM \
-    "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" \
-    "R_HOME" "$PROGRAMFILES64\R\R-${R_VERSION}"
-  SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
-
-  DetailPrint "Replacing BLAS with OpenBLAS..."
-  SetOutPath "$PROGRAMFILES64\R\R-${R_VERSION}\bin\x64"
-  File "staging\r-openblas\*.dll"
-
-  ; Copy pre-installed R packages (jsonlite + rgui2) — built in CI, no runtime compilation.
-  DetailPrint "Copying R packages..."
-  SetOutPath "$PROGRAMFILES64\R\R-${R_VERSION}\library"
-  File /r "staging\R-library\*"
-
-  ; Expose R_HOME in the current installer process so the finish-page
-  ; launch of rgui2.exe finds Rterm.exe without requiring a reboot.
-  System::Call 'Kernel32::SetEnvironmentVariableA(t "R_HOME", t "$PROGRAMFILES64\R\R-${R_VERSION}") i'
+  ${If} $0 == ""
+    MessageBox MB_ICONEXCLAMATION|MB_OK \
+      "No existing R installation was found. Please install R from https://cran.r-project.org, then re-run this installer to copy the bundled R packages."
+  ${Else}
+    DetailPrint "Found R installation at $0"
+    DetailPrint "Copying R packages..."
+    SetOutPath "$0\library"
+    File /r "staging\R-library\*"
+  ${EndIf}
 
 SectionEnd
 
@@ -193,6 +180,6 @@ SectionEnd
 ; -- Section descriptions (shown on the components page) -----------------------
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}    "R GUI 2 application files (required)."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecR}       "R ${R_VERSION} with OpenBLAS high-performance BLAS. Installs to Program Files\R\R-${R_VERSION}."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecRPkg}    "Copies jsonlite and rgui2 R packages into your existing R installation."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecRTools}  "Rtools 4.5 — compiler toolchain needed to install R packages from source."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END

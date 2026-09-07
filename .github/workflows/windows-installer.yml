@@ -7,10 +7,6 @@ on:
         description: 'Version string (e.g. 1.2.3)'
         required: false
         default: '0.2.0'
-      r_version:
-        description: 'R version to bundle (e.g. 4.6.1)'
-        required: false
-        default: '4.6.1'
 
 jobs:
   build-windows:
@@ -111,23 +107,25 @@ jobs:
       - name: Pre-install R packages for bundling
         shell: pwsh
         run: |
-          $rscript = "$rCiDir\bin\Rscript.exe"
+          # Use whatever R is already installed on the runner image (no fixed version).
+          $rHome = & Rscript -e "cat(R.home())"
+          Write-Host "Using R installation at: $rHome"
 
           # Install jsonlite as a pre-built Windows binary (no compilation needed)
           Write-Host "Installing jsonlite..."
-          & $rscript -e "install.packages('jsonlite', repos='https://cloud.r-project.org', type='win.binary')"
+          & Rscript -e "install.packages('jsonlite', repos='https://cloud.r-project.org', type='win.binary')"
           if ($LASTEXITCODE -ne 0) { Write-Error "jsonlite install failed"; exit 1 }
 
           # Install rgui2 from source (pure R package — no compiler required)
           Write-Host "Installing rgui2..."
           $tarball = (Join-Path $PWD "installer\staging\rgui2pkg.tar.gz") -replace '\\', '/'
-          & $rscript -e "install.packages('$tarball', repos=NULL, type='source')"
+          & Rscript -e "install.packages('$tarball', repos=NULL, type='source')"
           if ($LASTEXITCODE -ne 0) { Write-Error "rgui2 install failed"; exit 1 }
 
           # Stage the installed package trees for NSIS to bundle
           New-Item -ItemType Directory -Force installer\staging\R-library | Out-Null
           foreach ($pkg in @("jsonlite", "rgui2")) {
-            $src = "$rCiDir\library\$pkg"
+            $src = Join-Path $rHome "library\$pkg"
             if (Test-Path $src) {
               Copy-Item -Recurse $src installer\staging\R-library\
               Write-Host "Staged: $pkg"
@@ -148,7 +146,6 @@ jobs:
         run: >
           makensis
           /DAPP_VERSION=${{ steps.version.outputs.version }}
-          /DR_VERSION=${{ inputs.r_version }}
           installer\windows-installer.nsi
 
       # -- 9. Publish artifacts ----------------------------------------------
