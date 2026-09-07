@@ -111,14 +111,6 @@ jobs:
       - name: Pre-install R packages for bundling
         shell: pwsh
         run: |
-          # Install R on the CI runner using the already-staged installer so
-          # packages are compiled/configured against the exact bundled R version.
-          $rCiDir  = "$env:TEMP\R_ci"
-          $installer = Join-Path $PWD "installer\staging\R-installer.exe"
-          Write-Host "Installing R on CI runner to $rCiDir..."
-          Start-Process -Wait -FilePath $installer `
-            -ArgumentList "/VERYSILENT", "/NORESTART", "/DIR=$rCiDir"
-
           $rscript = "$rCiDir\bin\Rscript.exe"
 
           # Install jsonlite as a pre-built Windows binary (no compilation needed)
