@@ -42,7 +42,7 @@ jobs:
         with:
           arch: x64
 
-      # -- 3.5. Generate application icon (SVG → ICO) -----------------------
+      # -- 4. Generate application icon (SVG → ICO) -----------------------
       # ImageMagick (magick) is pre-installed on GitHub Actions Windows runners.
       # The ICO is written to src/ (for CMake RC embedding) and installer/
       # (for the NSIS MUI_ICON define).
@@ -59,14 +59,14 @@ jobs:
           & magick $pngs src\r-gui-2.ico
           Copy-Item src\r-gui-2.ico installer\r-gui-2.ico
 
-      # -- 4. Derive version string ------------------------------------------
+      # -- 5. Derive version string ------------------------------------------
       - name: Compute version
         id: version
         shell: bash
         run: |
           echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
 
-      # -- 5. Configure & build ----------------------------------------------
+      # -- 6. Configure & build ----------------------------------------------
       - name: Configure CMake
         shell: pwsh
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -75,7 +75,7 @@ jobs:
         shell: pwsh
         run: cmake --build build -j $env:NUMBER_OF_PROCESSORS
 
-      # -- 6. Stage application files ----------------------------------------
+      # -- 7. Stage application files ----------------------------------------
       - name: Deploy Qt DLLs (windeployqt6)
         shell: pwsh
         run: |
@@ -97,28 +97,6 @@ jobs:
           Copy-Item -Recurse gogh-themes  installer\staging\gogh-themes
           Copy-Item -Recurse fonts        installer\staging\fonts
           Copy-Item -Recurse rgui2pkg     installer\staging\rgui2pkg
-
-      # -- 7. Bundle R, OpenBLAS, and RTools ---------------------------------
-      - name: Download R installer
-        shell: pwsh
-        run: |
-          $rVer = "${{ inputs.r_version }}"
-          $url = "https://cran.r-project.org/bin/windows/base/R-${rVer}-win.exe"
-          Write-Host "Downloading R ${rVer} from ${url}"
-          Invoke-WebRequest -Uri $url -OutFile installer\staging\R-installer.exe
-
-      - name: Download RTools 4.5 installer
-        shell: pwsh
-        run: |
-          $page = (Invoke-WebRequest "https://cran.r-project.org/bin/windows/Rtools/rtools45/files/").Content
-          if ($page -match 'href="(rtools45[^"]+\.exe)"') {
-            $file = $matches[1]
-            $url  = "https://cran.r-project.org/bin/windows/Rtools/rtools45/files/$file"
-            Write-Host "Downloading RTools from ${url}"
-            Invoke-WebRequest -Uri $url -OutFile installer\staging\rtools-installer.exe
-          } else {
-            Write-Error "Could not find RTools 4.5 installer on CRAN"; exit 1
-          }
 
       - name: Download rgui2 R package tarball
         shell: pwsh
@@ -166,34 +144,6 @@ jobs:
             }
           }
 
-      - name: Download and stage OpenBLAS DLLs
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $rel = Invoke-RestMethod `
-            "https://api.github.com/repos/OpenMathLib/OpenBLAS/releases/latest" `
-            -Headers @{ Authorization = "Bearer $env:GH_TOKEN" }
-          $asset = $rel.assets | Where-Object { $_.name -match '^OpenBLAS-[\d.]+-x64-64\.zip$' } | Select-Object -First 1
-          if (-not $asset) {
-            $asset = $rel.assets | Where-Object { $_.name -match '^OpenBLAS-[\d.]+\.zip$' } | Select-Object -First 1
-          }
-          if (-not $asset) { Write-Error "No OpenBLAS zip asset found"; exit 1 }
-
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$env:TEMP\openblas.zip"
-          Expand-Archive "$env:TEMP\openblas.zip" -DestinationPath "$env:TEMP\openblas"
-
-          $dlls = Get-ChildItem "$env:TEMP\openblas" -Recurse -Filter "*.dll"
-          if (-not $dlls) { Write-Error "No DLLs found in OpenBLAS release"; exit 1 }
-
-          New-Item -ItemType Directory -Force installer\staging\r-openblas | Out-Null
-          foreach ($dll in $dlls) {
-            $dest = if ($dll.Name -eq "libopenblas.dll") { "Rblas.dll" } else { $dll.Name }
-            Copy-Item $dll.FullName "installer\staging\r-openblas\$dest"
-          }
-          Write-Host "Staged OpenBLAS DLLs:"
-          Get-ChildItem installer\staging\r-openblas
-
       # -- 8. NSIS installer -------------------------------------------------
       - name: Install NSIS
         shell: pwsh
@@ -209,7 +159,7 @@ jobs:
           /DR_VERSION=${{ inputs.r_version }}
           installer\windows-installer.nsi
 
-      # -- 8. Publish artifacts ----------------------------------------------
+      # -- 9. Publish artifacts ----------------------------------------------
       - name: Upload installer as workflow artifact
         uses: actions/upload-artifact@v4
         with:

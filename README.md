@@ -36,14 +36,7 @@ Educational purposes: When it is more complete, I will use it in my lectures/tut
 
 ## Installers
 
-I provided an installer for Windows that installs a full R setup. You can download it [here](https://github.com/pachadotdev/r-gui-2/releases/download/v0.2/R-GUI-2-0.2.0-Setup.exe).
-
-By full R setup I mean:
-
-1. R
-2. RTools (to build R packages)
-3. OpenBLAS (for faster linear algebra operations)
-4. R GUI 2
+I provided an installer for Windows. You can download it [here](https://github.com/pachadotdev/r-gui-2/releases/download/v0.2/R-GUI-2-0.2.0-Setup.exe).
 
 ## Build and test
 
