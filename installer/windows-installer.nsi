@@ -35,7 +35,7 @@ Var Rscript
 !define MUI_WELCOMEPAGE_TEXT \
   "This wizard will install ${APP_NAME} ${APP_VERSION} on your computer.$\r$\n$\r$\n\
    R GUI 2 is a lightweight Qt-based IDE for the R programming language.$\r$\n$\r$\n\
-   This installer bundles Rtools 4.5 and the rgui2 R package. An existing R installation is required.$\r$\n$\r$\n\
+   This installer bundles the rgui2 R package. An existing R installation is required.$\r$\n$\r$\n\
    Click Next to continue."
 !define MUI_FINISHPAGE_RUN         "$INSTDIR\${APP_EXE}"
 !define MUI_FINISHPAGE_RUN_TEXT    "Launch R GUI 2"
@@ -147,19 +147,6 @@ Section "rgui2 R package (requires existing R installation)" SecRPkg
 SectionEnd
 
 ; ===============================================================================
-; Rtools 4.5
-; ===============================================================================
-Section "Rtools 4.5 (compiler toolchain for R packages)" SecRTools
-
-  DetailPrint "Installing Rtools 4.5..."
-  SetOutPath "$TEMP"
-  File "/oname=rtools-installer.exe" "staging\rtools-installer.exe"
-  ExecWait '"$TEMP\rtools-installer.exe" /VERYSILENT /NORESTART'
-  Delete "$TEMP\rtools-installer.exe"
-
-SectionEnd
-
-; ===============================================================================
 ; Uninstaller
 ; ===============================================================================
 Section "Uninstall"
@@ -181,5 +168,4 @@ SectionEnd
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}    "R GUI 2 application files (required)."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecRPkg}    "Copies jsonlite and rgui2 R packages into your existing R installation."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecRTools}  "Rtools 4.5 — compiler toolchain needed to install R packages from source."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
