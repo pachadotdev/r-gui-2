@@ -3,11 +3,15 @@
 
 #include <QPlainTextEdit>
 #include <QObject>
+#include <QCompleter>
+#include <QStringListModel>
 #include "thememanager.h"
 #include "syntaxhighlighter.h"
 
 class QPaintEvent;
 class QResizeEvent;
+class QKeyEvent;
+class QFocusEvent;
 
 class CodeEditor : public QPlainTextEdit
 {
@@ -15,6 +19,7 @@ class CodeEditor : public QPlainTextEdit
 
 public:
     explicit CodeEditor(QWidget *parent = nullptr);
+    ~CodeEditor() override;
     
     void lineNumberAreaPaintEvent(QPaintEvent *event);
     int lineNumberAreaWidth();
@@ -23,19 +28,43 @@ public:
     void setLanguage(RSyntaxHighlighter::Language lang);
     void setLanguageFromFile(const QString &filePath);
 
+    void setCompleter(QCompleter *completer);
+    QCompleter *completer() const { return m_completer; }
+
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void focusInEvent(QFocusEvent *event) override;
 
 private slots:
     void updateLineNumberAreaWidth(int newBlockCount);
     void highlightCurrentLine();
     void updateLineNumberArea(const QRect &rect, int dy);
+    void insertCompletion(const QString &completion);
 
 private:
+    void setupCompleter();
+    void updateCompleterModel(bool packageContextOnly, const QString &pkgScope = QString());
+    void updateCompleterStyle();
+    QString textUnderCursor() const;
+    void checkAndShowCallTip(const QString &linePrefix);
+    static QStringList getInstalledRPackages();
+    static QStringList getPackageExports(const QString &packageName);
+    static QString getFunctionCallTip(const QString &funcName, const QString &pkg = QString());
+    QSet<QString> getLoadedPackages() const;
+    QStringList getSessionVariables() const;
+    QStringList getDocumentWords() const;
+    QStringList getBuiltinRCompletions() const;
+    QStringList getBuiltinCPPCompletions() const;
+
     QWidget *lineNumberArea;
     RSyntaxHighlighter *highlighter;
     EditorTheme currentTheme;
     int m_fontSize = 12;
+
+    QCompleter *m_completer = nullptr;
+    QStringListModel *m_completerModel = nullptr;
+    RSyntaxHighlighter::Language m_currentLanguage = RSyntaxHighlighter::Language::R;
 };
 
 // Line number area widget

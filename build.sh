@@ -118,9 +118,6 @@ echo ""
 echo "To run the application:"
 echo "  ${BUILD_DIR}/bin/rgui2"
 echo ""
-echo "Or use the launcher:"
-echo "  ./launch.sh"
-echo ""
 
 # Build package if requested
 if [ "${BUILD_PACKAGE}" = "1" ]; then
