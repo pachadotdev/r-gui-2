@@ -12,6 +12,7 @@ class QPaintEvent;
 class QResizeEvent;
 class QKeyEvent;
 class QFocusEvent;
+class QEvent;
 
 class CodeEditor : public QPlainTextEdit
 {
@@ -31,10 +32,21 @@ public:
     void setCompleter(QCompleter *completer);
     QCompleter *completer() const { return m_completer; }
 
+    struct FunctionCallContext {
+        bool insideCall = false;
+        QString funcName;
+        QString pkgScope;
+        QString currentArgPrefix;
+        bool isArgNameContext = false;
+    };
+
+    static FunctionCallContext getFunctionCallContext(const QTextCursor &cursor);
+
 protected:
     void resizeEvent(QResizeEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void focusInEvent(QFocusEvent *event) override;
+    bool viewportEvent(QEvent *event) override;
 
 private slots:
     void updateLineNumberAreaWidth(int newBlockCount);
@@ -44,13 +56,18 @@ private slots:
 
 private:
     void setupCompleter();
-    void updateCompleterModel(bool packageContextOnly, const QString &pkgScope = QString());
+    void updateCompleterModel(bool packageContextOnly, const QString &pkgScope = QString(),
+                               bool argContext = false, const QString &argFuncName = QString());
     void updateCompleterStyle();
     QString textUnderCursor() const;
-    void checkAndShowCallTip(const QString &linePrefix);
+    static QString findRscriptBinary();
+    static void ensureFunctionInfo(const QString &funcName, const QString &pkg);
+    static void fetchFunctionInfoFromR(const QString &funcName, const QString &pkg,
+                                       QStringList &outArgs, QString &outCallTip);
     static QStringList getInstalledRPackages();
     static QStringList getPackageExports(const QString &packageName);
     static QString getFunctionCallTip(const QString &funcName, const QString &pkg = QString());
+    static QStringList getFunctionArgNames(const QString &funcName, const QString &pkg = QString());
     QSet<QString> getLoadedPackages() const;
     QStringList getSessionVariables() const;
     QStringList getDocumentWords() const;

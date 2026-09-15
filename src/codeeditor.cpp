@@ -21,6 +21,8 @@
 #include <QDateTime>
 #include <QRegularExpression>
 #include <QToolTip>
+#include <QProcess>
+#include <QHelpEvent>
 
 CodeEditor::CodeEditor(QWidget *parent)
     : QPlainTextEdit(parent)
@@ -327,134 +329,183 @@ QStringList CodeEditor::getPackageExports(const QString &packageName)
     return result;
 }
 
+QString CodeEditor::findRscriptBinary()
+{
+    static QString s_cachedPath;
+    if (!s_cachedPath.isEmpty()) return s_cachedPath;
+
+    QString rHome = QString::fromLocal8Bit(qgetenv("R_HOME"));
+    if (!rHome.isEmpty()) {
+#ifdef Q_OS_WIN
+        QString p = rHome + "/bin/x64/Rscript.exe";
+        if (!QFileInfo::exists(p)) p = rHome + "/bin/Rscript.exe";
+#else
+        QString p = rHome + "/bin/Rscript";
+#endif
+        if (QFileInfo::exists(p)) {
+            s_cachedPath = p;
+            return p;
+        }
+    }
+
+    QString found = QStandardPaths::findExecutable("Rscript");
+    if (!found.isEmpty()) {
+        s_cachedPath = found;
+        return found;
+    }
+
+#ifdef Q_OS_WIN
+    for (const QString &dir : {"C:/Program Files/R", "C:/R"}) {
+        QDir d(dir);
+        if (d.exists()) {
+            for (const QString &sub : d.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+                QString candidate = d.filePath(sub) + "/bin/x64/Rscript.exe";
+                if (QFileInfo::exists(candidate)) {
+                    s_cachedPath = candidate;
+                    return candidate;
+                }
+            }
+        }
+    }
+#else
+    for (const char *path : {"/usr/bin/Rscript", "/usr/local/bin/Rscript", "/Library/Frameworks/R.framework/Resources/bin/Rscript"}) {
+        if (QFileInfo::exists(path)) {
+            s_cachedPath = path;
+            return path;
+        }
+    }
+#endif
+
+    s_cachedPath = "Rscript";
+    return s_cachedPath;
+}
+
+void CodeEditor::fetchFunctionInfoFromR(const QString &funcName, const QString &pkg,
+                                       QStringList &outArgs, QString &outCallTip)
+{
+    if (funcName.isEmpty()) return;
+
+    QString rscript = findRscriptBinary();
+    if (rscript.isEmpty()) return;
+
+    QString script = QString(R"(
+invisible(utils:::rc.settings())
+fun <- "%1"
+pkg <- "%2"
+if (nzchar(pkg)) try(suppressPackageStartupMessages(library(pkg, character.only=TRUE)), silent=TRUE)
+if (!nzchar(pkg)) {
+  for (p in unique(c(loadedNamespaces(), "base", "stats", "graphics", "utils", "methods", "datasets", .packages(all.available=TRUE)))) {
+    if (tryCatch(exists(fun, where=asNamespace(p), inherits=FALSE), error=function(e) FALSE)) {
+      pkg <- p
+      try(suppressPackageStartupMessages(library(pkg, character.only=TRUE)), silent=TRUE)
+      break
+    }
+  }
+}
+res_args <- tryCatch(utils:::functionArgs(fun, ""), error=function(e) character())
+if (length(res_args) == 0) {
+  f <- tryCatch(utils::argsAnywhere(fun), error=function(e) NULL)
+  if (!is.null(f)) {
+    nms <- names(formals(f))
+    res_args <- ifelse(nms == "...", "...", paste0(nms, "="))
+  }
+}
+
+usage <- ""
+h <- tryCatch(help(fun, package=if (nzchar(pkg)) pkg else NULL), error=function(e) NULL)
+if (!is.null(h) && length(h) > 0) {
+  try({
+    db <- utils:::.getHelpFile(h)
+    out <- capture.output(tools::Rd2txt(db, stages="render", options=list(underline_titles=FALSE)))
+    u_idx <- grep("^Usage:", out)
+    if (length(u_idx) > 0) {
+      next_sec <- grep("^[A-Z][a-zA-Z ]*:", out)
+      next_sec <- next_sec[next_sec > u_idx]
+      end_idx <- if (length(next_sec) > 0) next_sec[1] - 1 else length(out)
+      usage_lines <- out[(u_idx + 1):end_idx]
+      usage <- paste(trimws(usage_lines), collapse="\n")
+    }
+  }, silent=TRUE)
+}
+if (!nzchar(usage)) {
+  f <- tryCatch(utils::argsAnywhere(fun), error=function(e) NULL)
+  if (!is.null(f)) {
+    txt <- paste(deparse(args(f)), collapse=" ")
+    txt <- sub("^function\\s*", paste0(fun), txt)
+    txt <- sub("\\s*NULL$", "", txt)
+    usage <- txt
+  }
+}
+
+cat("===ARGS===\n")
+cat(res_args, sep="\n")
+cat("\n===USAGE===\n")
+cat(trimws(usage))
+)").arg(funcName, pkg);
+
+    QProcess proc;
+    proc.start(rscript, QStringList() << "--vanilla" << "-e" << script);
+    if (proc.waitForFinished(1500)) {
+        QString output = QString::fromUtf8(proc.readAllStandardOutput());
+        int argsIdx = output.indexOf("===ARGS===");
+        int usageIdx = output.indexOf("===USAGE===");
+        if (argsIdx >= 0) {
+            int endArgs = (usageIdx >= 0) ? usageIdx : output.length();
+            QString argsSection = output.mid(argsIdx + 10, endArgs - (argsIdx + 10)).trimmed();
+            if (!argsSection.isEmpty()) {
+                outArgs = argsSection.split('\n', Qt::SkipEmptyParts);
+                for (QString &a : outArgs) a = a.trimmed();
+            }
+        }
+        if (usageIdx >= 0) {
+            outCallTip = output.mid(usageIdx + 11).trimmed();
+        }
+    }
+}
+
+static QMap<QString, QStringList> s_cachedArgNames;
+static QMap<QString, QString> s_cachedCallTips;
+
+void CodeEditor::ensureFunctionInfo(const QString &funcName, const QString &pkg)
+{
+    QString cacheKey = pkg.isEmpty() ? funcName : (pkg + "::" + funcName);
+    if (s_cachedArgNames.contains(cacheKey) && s_cachedCallTips.contains(cacheKey)) {
+        return;
+    }
+
+    QStringList args;
+    QString callTip;
+    fetchFunctionInfoFromR(funcName, pkg, args, callTip);
+
+    s_cachedArgNames.insert(cacheKey, args);
+    s_cachedCallTips.insert(cacheKey, callTip);
+}
+
 QString CodeEditor::getFunctionCallTip(const QString &funcName, const QString &pkg)
 {
-    static QMap<QString, QString> s_cachedCallTips;
     QString cacheKey = pkg.isEmpty() ? funcName : (pkg + "::" + funcName);
-    if (s_cachedCallTips.contains(cacheKey)) {
-        return s_cachedCallTips.value(cacheKey);
+    ensureFunctionInfo(funcName, pkg);
+    QString rawTip = s_cachedCallTips.value(cacheKey);
+    QStringList args = s_cachedArgNames.value(cacheKey);
+
+    QString title = !pkg.isEmpty() ? (pkg + "::" + funcName) : funcName;
+
+    if (!rawTip.isEmpty()) {
+        return QString("<div style='font-family:monospace; font-size:11px; padding:2px;'><b>%1</b>\n%2</div>")
+               .arg(title.toHtmlEscaped(), rawTip.trimmed().toHtmlEscaped());
     }
-
-    QList<QString> candidatePkgs;
-    if (!pkg.isEmpty()) {
-        candidatePkgs.append(pkg);
-    } else {
-        candidatePkgs.append("base");
-        candidatePkgs.append("stats");
-        candidatePkgs.append("graphics");
-        candidatePkgs.append("utils");
-        candidatePkgs.append("methods");
-        candidatePkgs.append("datasets");
-        for (const QString &p : getInstalledRPackages()) {
-            if (!candidatePkgs.contains(p)) {
-                candidatePkgs.append(p);
-            }
-        }
+    if (!args.isEmpty()) {
+        return QString("<div style='font-family:monospace; font-size:11px; padding:2px;'><b>%1</b>(%2)</div>")
+               .arg(title.toHtmlEscaped(), args.join(", ").toHtmlEscaped());
     }
+    return QString();
+}
 
-    QList<QString> libDirs;
-    for (const char *envVar : {"R_LIBS_USER", "R_LIBS", "R_LIBS_SITE"}) {
-        QString val = QString::fromLocal8Bit(qgetenv(envVar));
-        if (!val.isEmpty()) {
-#ifdef Q_OS_WIN
-            const QStringList paths = val.split(';', Qt::SkipEmptyParts);
-#else
-            const QStringList paths = val.split(':', Qt::SkipEmptyParts);
-#endif
-            libDirs.append(paths);
-        }
-    }
-    libDirs.append("/usr/lib/R/library");
-    libDirs.append("/usr/lib64/R/library");
-    libDirs.append("/usr/local/lib/R/site-library");
-    libDirs.append("/Library/Frameworks/R.framework/Resources/library");
-
-    QDir homeR(QDir::homePath() + "/R");
-    if (homeR.exists()) {
-        for (const QString &sub : homeR.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-            QString subPath = homeR.filePath(sub);
-            libDirs.append(subPath);
-            QDir subDir(subPath);
-            for (const QString &v : subDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-                libDirs.append(subDir.filePath(v));
-            }
-        }
-    }
-
-    QString usageStr;
-    QString exampleStr;
-
-    for (const QString &p : candidatePkgs) {
-        for (const QString &lib : libDirs) {
-            QString htmlPath = lib + "/" + p + "/html/" + funcName + ".html";
-            if (!QFile::exists(htmlPath)) {
-                // Try 00Index.html or help page alias
-                continue;
-            }
-
-            QFile f(htmlPath);
-            if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                QString html = QString::fromUtf8(f.readAll());
-                f.close();
-
-                // Extract Usage section: <h3>Usage</h3>\s*<pre[^>]*>(.*?)</pre>
-                static const QRegularExpression usageRegex(R"(<h3>Usage</h3>\s*<pre[^>]*>(.*?)</pre>)", QRegularExpression::DotMatchesEverythingOption);
-                QRegularExpressionMatch uMatch = usageRegex.match(html);
-                if (uMatch.hasMatch()) {
-                    usageStr = uMatch.captured(1).trimmed();
-                    // Clean HTML tags and entities
-                    usageStr.remove(QRegularExpression("<[^>]*>"));
-                    usageStr.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", "\"");
-                    // Take the relevant function signature line if multiple
-                    QStringList uLines = usageStr.split('\n', Qt::SkipEmptyParts);
-                    for (const QString &ul : uLines) {
-                        QString trimmed = ul.trimmed();
-                        if (trimmed.startsWith(funcName + "(") || trimmed.startsWith(funcName + " (")) {
-                            usageStr = trimmed;
-                            break;
-                        }
-                    }
-                    if (!uLines.isEmpty() && !usageStr.startsWith(funcName)) {
-                        usageStr = uLines.first().trimmed();
-                    }
-                }
-
-                // Extract first meaningful example line from: <h3>Examples</h3>\s*<pre[^>]*>(.*?)</pre>
-                static const QRegularExpression exRegex(R"(<h3>Examples</h3>\s*<pre[^>]*>(.*?)</pre>)", QRegularExpression::DotMatchesEverythingOption);
-                QRegularExpressionMatch exMatch = exRegex.match(html);
-                if (exMatch.hasMatch()) {
-                    QString rawEx = exMatch.captured(1);
-                    rawEx.remove(QRegularExpression("<[^>]*>"));
-                    rawEx.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", "\"");
-                    const QStringList exLines = rawEx.split('\n');
-                    for (const QString &el : exLines) {
-                        QString trimmed = el.trimmed();
-                        if (trimmed.startsWith("#") || trimmed.isEmpty() || trimmed.startsWith("##")) continue;
-                        if (trimmed.contains(funcName + "(")) {
-                            exampleStr = trimmed;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!usageStr.isEmpty() || !exampleStr.isEmpty()) break;
-        }
-        if (!usageStr.isEmpty() || !exampleStr.isEmpty()) break;
-    }
-
-    QString tip;
-    if (!usageStr.isEmpty()) {
-        tip += "<b>" + usageStr.toHtmlEscaped() + "</b>";
-    }
-    if (!exampleStr.isEmpty()) {
-        if (!tip.isEmpty()) tip += "<br>";
-        tip += "<span style='color:#888;'><i>e.g. </i></span><code>" + exampleStr.toHtmlEscaped() + "</code>";
-    }
-
-    if (!tip.isEmpty()) {
-        s_cachedCallTips.insert(cacheKey, tip);
-    }
-    return tip;
+QStringList CodeEditor::getFunctionArgNames(const QString &funcName, const QString &pkg)
+{
+    QString cacheKey = pkg.isEmpty() ? funcName : (pkg + "::" + funcName);
+    ensureFunctionInfo(funcName, pkg);
+    return s_cachedArgNames.value(cacheKey);
 }
 
 QStringList CodeEditor::getSessionVariables() const
@@ -564,14 +615,19 @@ QSet<QString> CodeEditor::getLoadedPackages() const
     return pkgs;
 }
 
-void CodeEditor::updateCompleterModel(bool packageContextOnly, const QString &pkgScope)
+void CodeEditor::updateCompleterModel(bool packageContextOnly, const QString &pkgScope,
+                                       bool argContext, const QString &argFuncName)
 {
     if (!m_completerModel)
         return;
 
     QSet<QString> items;
 
-    if (!pkgScope.isEmpty()) {
+    if (argContext) {
+        for (const QString &a : getFunctionArgNames(argFuncName, pkgScope)) {
+            items.insert(a);
+        }
+    } else if (!pkgScope.isEmpty()) {
         for (const QString &fn : getPackageExports(pkgScope)) {
             items.insert(fn);
         }
@@ -630,32 +686,153 @@ void CodeEditor::insertCompletion(const QString &completion)
     setTextCursor(tc);
 }
 
-void CodeEditor::checkAndShowCallTip(const QString &linePrefix)
+CodeEditor::FunctionCallContext CodeEditor::getFunctionCallContext(const QTextCursor &cursor)
 {
-    // Detect if cursor is directly after ( or inside arguments of funcName( or pkg::funcName(
-    static const QRegularExpression callRegex(R"((?:([A-Za-z0-9._]+):::?)?([A-Za-z0-9._]+)\s*\([^()]*$)");
-    QRegularExpressionMatch match = callRegex.match(linePrefix);
-    if (!match.hasMatch()) {
-        QToolTip::hideText();
-        return;
+    FunctionCallContext ctx;
+    int globalPos = cursor.position();
+    int startPos = qMax(0, globalPos - 2000);
+    QTextCursor scanCursor = cursor;
+    scanCursor.setPosition(startPos);
+    scanCursor.setPosition(globalPos, QTextCursor::KeepAnchor);
+    QString text = scanCursor.selectedText();
+    text.replace(QChar(0x2029), '\n');
+
+    int len = text.length();
+    int depth = 0;
+    int callOpenIdx = -1;
+
+    // Scan backwards from cursor position
+    for (int i = len - 1; i >= 0; --i) {
+        QChar c = text.at(i);
+        if (c == ')' || c == ']' || c == '}') {
+            ++depth;
+        } else if (c == '(' || c == '[' || c == '{') {
+            if (depth > 0) {
+                --depth;
+            } else if (c == '(') {
+                callOpenIdx = i;
+                break;
+            }
+        }
     }
 
-    QString pkg = match.captured(1);
-    QString funcName = match.captured(2);
-
-    if (funcName == "if" || funcName == "while" || funcName == "for" || funcName == "function") {
-        QToolTip::hideText();
-        return;
+    if (callOpenIdx < 0) {
+        return ctx;
     }
 
-    QString tip = getFunctionCallTip(funcName, pkg);
-    if (!tip.isEmpty()) {
-        QPoint pos = mapToGlobal(cursorRect().bottomLeft());
-        pos.setY(pos.y() + 4);
-        QToolTip::showText(pos, tip, this);
+    // Look at identifier before callOpenIdx
+    QString prefixBeforeParen = text.left(callOpenIdx).trimmed();
+    static const QRegularExpression fnRegex(R"((?:([A-Za-z0-9._]+):::?)?([A-Za-z0-9._]+)$)");
+    QRegularExpressionMatch fnMatch = fnRegex.match(prefixBeforeParen);
+    if (!fnMatch.hasMatch()) {
+        return ctx;
+    }
+
+    QString fn = fnMatch.captured(2);
+    if (fn == "if" || fn == "while" || fn == "for" || fn == "function" || fn == "switch") {
+        return ctx;
+    }
+
+    ctx.insideCall = true;
+    ctx.pkgScope = fnMatch.captured(1);
+    ctx.funcName = fn;
+
+    // Text between '(' and cursor
+    QString argsText = text.mid(callOpenIdx + 1);
+
+    // Split by top-level commas within this call
+    int argDepth = 0;
+    int lastCommaIdx = -1;
+    bool inQuote = false;
+    QChar quoteChar;
+
+    for (int i = 0; i < argsText.length(); ++i) {
+        QChar c = argsText.at(i);
+        if (inQuote) {
+            if (c == quoteChar && (i == 0 || argsText.at(i - 1) != '\\')) {
+                inQuote = false;
+            }
+            continue;
+        }
+        if (c == '"' || c == '\'') {
+            inQuote = true;
+            quoteChar = c;
+            continue;
+        }
+        if (c == '(' || c == '[' || c == '{') {
+            ++argDepth;
+        } else if (c == ')' || c == ']' || c == '}') {
+            if (argDepth > 0) --argDepth;
+        } else if (c == ',' && argDepth == 0) {
+            lastCommaIdx = i;
+        }
+    }
+
+    QString currentSeg = (lastCommaIdx >= 0) ? argsText.mid(lastCommaIdx + 1) : argsText;
+
+    // Check if currentSeg contains '=' at top level
+    bool hasEqual = false;
+    int eqDepth = 0;
+    bool eqInQuote = false;
+    QChar eqQuoteChar;
+    for (int i = 0; i < currentSeg.length(); ++i) {
+        QChar c = currentSeg.at(i);
+        if (eqInQuote) {
+            if (c == eqQuoteChar && (i == 0 || currentSeg.at(i - 1) != '\\')) eqInQuote = false;
+            continue;
+        }
+        if (c == '"' || c == '\'') { eqInQuote = true; eqQuoteChar = c; continue; }
+        if (c == '(' || c == '[' || c == '{') ++eqDepth;
+        else if (c == ')' || c == ']' || c == '}') { if (eqDepth > 0) --eqDepth; }
+        else if (c == '=' && eqDepth == 0) { hasEqual = true; break; }
+    }
+
+    if (!hasEqual) {
+        ctx.isArgNameContext = true;
+        ctx.currentArgPrefix = currentSeg.trimmed();
     } else {
-        QToolTip::hideText();
+        ctx.isArgNameContext = false;
     }
+
+    return ctx;
+}
+
+bool CodeEditor::viewportEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ToolTip && m_currentLanguage == RSyntaxHighlighter::Language::R) {
+        auto *helpEvent = static_cast<QHelpEvent *>(event);
+        QTextCursor tc = cursorForPosition(helpEvent->pos());
+        FunctionCallContext ctx = getFunctionCallContext(tc);
+        QString funcName;
+        QString pkgScope;
+        if (ctx.insideCall) {
+            funcName = ctx.funcName;
+            pkgScope = ctx.pkgScope;
+        } else {
+            tc.select(QTextCursor::WordUnderCursor);
+            QString word = tc.selectedText().trimmed();
+            if (!word.isEmpty() && (word.at(0).isLetter() || word.at(0) == '.')) {
+                funcName = word;
+            }
+        }
+
+        if (!funcName.isEmpty() && funcName != "if" && funcName != "while" && funcName != "for" && funcName != "function" && funcName != "switch") {
+            QString tip = getFunctionCallTip(funcName, pkgScope);
+            if (!tip.isEmpty()) {
+                // Show tooltip offset to the right side so it does not block the code line
+                QRect cr = cursorRect(tc);
+                QPoint globalPos = mapToGlobal(cr.topRight()) + QPoint(20, 0);
+                if (globalPos.x() < helpEvent->globalPos().x()) {
+                    globalPos = helpEvent->globalPos() + QPoint(20, 0);
+                }
+                QToolTip::showText(globalPos, tip, this);
+                return true;
+            }
+        }
+        QToolTip::hideText();
+        return true;
+    }
+    return QPlainTextEdit::viewportEvent(event);
 }
 
 void CodeEditor::keyPressEvent(QKeyEvent *e)
@@ -674,6 +851,26 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
             return;
         default:
             break;
+        }
+    }
+
+    // If Tab is pressed inside an R function argument context, open argument completion popup
+    if (e->key() == Qt::Key_Tab || e->key() == Qt::Key_Backtab) {
+        if (m_currentLanguage == RSyntaxHighlighter::Language::R) {
+            FunctionCallContext ctx = getFunctionCallContext(textCursor());
+            if (ctx.insideCall && ctx.isArgNameContext) {
+                updateCompleterModel(false, ctx.pkgScope, true, ctx.funcName);
+                if (m_completerModel && m_completerModel->rowCount() > 0) {
+                    m_completer->setCompletionPrefix(ctx.currentArgPrefix);
+                    m_completer->popup()->setCurrentIndex(m_completer->completionModel()->index(0, 0));
+                    QRect cr = cursorRect();
+                    cr.setWidth(m_completer->popup()->sizeHintForColumn(0)
+                                + m_completer->popup()->verticalScrollBar()->sizeHint().width() + 20);
+                    m_completer->complete(cr);
+                    e->accept();
+                    return;
+                }
+            }
         }
     }
 
@@ -713,6 +910,8 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
     QString completionPrefix;
     QString pkgScope;
     bool isPkgContext = false;
+    bool isArgContext = false;
+    QString argFuncName;
 
     if (nsMatch.hasMatch()) {
         pkgScope = nsMatch.captured(1);
@@ -720,20 +919,30 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
     } else if (pkgMatch.hasMatch()) {
         isPkgContext = true;
         completionPrefix = pkgMatch.captured(1);
+    } else if (m_currentLanguage == RSyntaxHighlighter::Language::R) {
+        FunctionCallContext ctx = getFunctionCallContext(textCursor());
+        if (ctx.insideCall && ctx.isArgNameContext) {
+            isArgContext = true;
+            argFuncName = ctx.funcName;
+            pkgScope = ctx.pkgScope;
+            completionPrefix = ctx.currentArgPrefix;
+        } else {
+            completionPrefix = textUnderCursor();
+        }
     } else {
         completionPrefix = textUnderCursor();
     }
 
-    const bool isNsContext = !pkgScope.isEmpty();
+    const bool isNsContext = !pkgScope.isEmpty() && !isArgContext;
 
     if (!isShortcut && (hasModifier || e->text().isEmpty()
-                        || (!isNsContext && completionPrefix.length() < 1)
-                        || (eow.contains(e->text().right(1)) && !isPkgContext && !isNsContext && e->text().right(1) != "." && e->text().right(1) != "_"))) {
+                        || (!isNsContext && !isArgContext && completionPrefix.length() < 1)
+                        || (eow.contains(e->text().right(1)) && !isPkgContext && !isNsContext && !isArgContext && e->text().right(1) != "." && e->text().right(1) != "_"))) {
         m_completer->popup()->hide();
         return;
     }
 
-    updateCompleterModel(isPkgContext, pkgScope);
+    updateCompleterModel(isPkgContext, pkgScope, isArgContext, argFuncName);
 
     if (completionPrefix != m_completer->completionPrefix()) {
         m_completer->setCompletionPrefix(completionPrefix);
@@ -747,10 +956,6 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         m_completer->complete(cr);
     } else {
         m_completer->popup()->hide();
-    }
-
-    if (m_currentLanguage == RSyntaxHighlighter::Language::R) {
-        checkAndShowCallTip(linePrefix);
     }
 }
 
