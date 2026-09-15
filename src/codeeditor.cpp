@@ -453,8 +453,15 @@ cat(trimws(usage))
             int endArgs = (usageIdx >= 0) ? usageIdx : output.length();
             QString argsSection = output.mid(argsIdx + 10, endArgs - (argsIdx + 10)).trimmed();
             if (!argsSection.isEmpty()) {
-                outArgs = argsSection.split('\n', Qt::SkipEmptyParts);
-                for (QString &a : outArgs) a = a.trimmed();
+                const QStringList rawList = argsSection.split('\n', Qt::SkipEmptyParts);
+                for (const QString &raw : rawList) {
+                    QString a = raw.trimmed();
+                    if (a.isEmpty()) continue;
+                    if (a.endsWith('=')) {
+                        a = a.left(a.length() - 1).trimmed() + " = ";
+                    }
+                    outArgs.append(a);
+                }
             }
         }
         if (usageIdx >= 0) {
