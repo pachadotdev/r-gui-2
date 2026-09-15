@@ -841,36 +841,16 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         switch (e->key()) {
         case Qt::Key_Enter:
         case Qt::Key_Return:
-        case Qt::Key_Tab:
-        case Qt::Key_Backtab:
             e->ignore();
             return;
         case Qt::Key_Escape:
+        case Qt::Key_Tab:
+        case Qt::Key_Backtab:
+        case Qt::Key_Space:
             m_completer->popup()->hide();
-            e->accept();
-            return;
+            break;
         default:
             break;
-        }
-    }
-
-    // If Tab is pressed inside an R function argument context, open argument completion popup
-    if (e->key() == Qt::Key_Tab || e->key() == Qt::Key_Backtab) {
-        if (m_currentLanguage == RSyntaxHighlighter::Language::R) {
-            FunctionCallContext ctx = getFunctionCallContext(textCursor());
-            if (ctx.insideCall && ctx.isArgNameContext) {
-                updateCompleterModel(false, ctx.pkgScope, true, ctx.funcName);
-                if (m_completerModel && m_completerModel->rowCount() > 0) {
-                    m_completer->setCompletionPrefix(ctx.currentArgPrefix);
-                    m_completer->popup()->setCurrentIndex(m_completer->completionModel()->index(0, 0));
-                    QRect cr = cursorRect();
-                    cr.setWidth(m_completer->popup()->sizeHintForColumn(0)
-                                + m_completer->popup()->verticalScrollBar()->sizeHint().width() + 20);
-                    m_completer->complete(cr);
-                    e->accept();
-                    return;
-                }
-            }
         }
     }
 
@@ -887,7 +867,7 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         return;
     }
 
-    static const QString eow("~!@#$%^&*()_+{}|:\"<>?,/;'[]\\-=");
+    static const QString eow("~!@#$%^&*()_+{}|:\"<>?,/;'[]\\-= ");
     const bool hasModifier = (e->modifiers() != Qt::NoModifier) && !ctrlOrShift;
 
     if (!isShortcut) {
