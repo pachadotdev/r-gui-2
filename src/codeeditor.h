@@ -32,6 +32,9 @@ public:
     void setCompleter(QCompleter *completer);
     QCompleter *completer() const { return m_completer; }
 
+    void setSuggestionsEnabled(bool enabled);
+    bool suggestionsEnabled() const { return m_suggestionsEnabled; }
+
     struct FunctionCallContext {
         bool insideCall = false;
         QString funcName;
@@ -82,6 +85,7 @@ private:
     QCompleter *m_completer = nullptr;
     QStringListModel *m_completerModel = nullptr;
     RSyntaxHighlighter::Language m_currentLanguage = RSyntaxHighlighter::Language::R;
+    bool m_suggestionsEnabled = true;
 };
 
 // Line number area widget

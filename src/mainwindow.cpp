@@ -198,6 +198,21 @@ void MainWindow::createMenus()
     });
     codeMenu->addAction(clearConsoleAct);
     
+    codeMenu->addSeparator();
+
+    toggleSuggestionsAct = new QAction(tr("Activate/Deactivate Code Suggestions"), this);
+    toggleSuggestionsAct->setCheckable(true);
+    toggleSuggestionsAct->setChecked(m_suggestionsEnabled);
+    connect(toggleSuggestionsAct, &QAction::toggled, this, [this](bool enabled) {
+        m_suggestionsEnabled = enabled;
+        for (int i = 0; i < editorTabs->count(); ++i) {
+            if (auto *editor = qobject_cast<CodeEditor*>(editorTabs->widget(i))) {
+                editor->setSuggestionsEnabled(enabled);
+            }
+        }
+    });
+    codeMenu->addAction(toggleSuggestionsAct);
+    
     // View menu
     viewMenu = menuBar()->addMenu(tr("&View"));
 
@@ -355,6 +370,15 @@ void MainWindow::loadSettings()
     QSettings settings("RGUI2", "RGUI2");
     restoreGeometry(settings.value("geometry").toByteArray());
 
+    m_suggestionsEnabled = settings.value("suggestionsEnabled", true).toBool();
+    if (toggleSuggestionsAct) {
+        toggleSuggestionsAct->setChecked(m_suggestionsEnabled);
+    }
+    for (int i = 0; i < editorTabs->count(); ++i) {
+        if (auto *ed = qobject_cast<CodeEditor*>(editorTabs->widget(i)))
+            ed->setSuggestionsEnabled(m_suggestionsEnabled);
+    }
+
     m_globalFontSize = settings.value("globalFontSize", 12).toInt();
     m_globalFontSize = qBound(6, m_globalFontSize, 32);
     for (int i = 0; i < consoleTabs->count(); ++i) {
@@ -394,10 +418,11 @@ void MainWindow::loadSettings()
 void MainWindow::saveSettings()
 {
     QSettings settings("RGUI2", "RGUI2");
-    settings.setValue("geometry",       saveGeometry());
-    settings.setValue("outerSplitter",  m_outerSplitter->saveState());
-    settings.setValue("centerSplitter", m_centerSplitter->saveState());
-    settings.setValue("globalFontSize", m_globalFontSize);
+    settings.setValue("geometry",           saveGeometry());
+    settings.setValue("outerSplitter",      m_outerSplitter->saveState());
+    settings.setValue("centerSplitter",     m_centerSplitter->saveState());
+    settings.setValue("globalFontSize",     m_globalFontSize);
+    settings.setValue("suggestionsEnabled", m_suggestionsEnabled);
 }
 
 CodeEditor* MainWindow::getCurrentEditor()
@@ -420,6 +445,7 @@ void MainWindow::addNewEditorTab(const QString &title)
 {
     CodeEditor *editor = new CodeEditor(this);
     editor->setFontSize(m_globalFontSize);
+    editor->setSuggestionsEnabled(m_suggestionsEnabled);
     int index = editorTabs->addTab(editor, title);
     editorTabs->setCurrentIndex(index);
     

@@ -67,9 +67,11 @@ private:
     QMenu *codeMenu = nullptr;
     QMenu *viewMenu = nullptr;
     QMenu *helpMenu = nullptr;
+    QAction *toggleSuggestionsAct = nullptr;
 
     QString currentFile;
     int     m_globalFontSize = 12;  // shared font size for editors + terminals
+    bool    m_suggestionsEnabled = true;
     QString m_currentDir;           // last directory opened via Open Directory
 
     CodeEditor *getCurrentEditor();

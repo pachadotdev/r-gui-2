@@ -104,6 +104,14 @@ void CodeEditor::setCompleter(QCompleter *completer)
     updateCompleterStyle();
 }
 
+void CodeEditor::setSuggestionsEnabled(bool enabled)
+{
+    m_suggestionsEnabled = enabled;
+    if (!m_suggestionsEnabled && m_completer && m_completer->popup()) {
+        m_completer->popup()->hide();
+    }
+}
+
 void CodeEditor::updateCompleterStyle()
 {
     if (!m_completer || !m_completer->popup())
@@ -881,7 +889,7 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         QPlainTextEdit::keyPressEvent(e);
     }
 
-    if (!m_completer)
+    if (!m_completer || (!m_suggestionsEnabled && !isShortcut))
         return;
 
     QString linePrefix = textCursor().block().text().left(textCursor().positionInBlock());
