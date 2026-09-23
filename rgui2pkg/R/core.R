@@ -106,6 +106,69 @@ get_env_info <- function() {
   return(info)
 }
 
+#' Initialise silent plot capture
+#'
+#' Redirects R's default graphics device so plots never open a disruptive
+#' native OS popup window (X11/Windows/Quartz). Instead, each new plotting
+#' device renders straight to an offscreen PNG file, and after every
+#' top-level command the current plot (if changed) is snapshotted to
+#' \code{plot_dir} and recorded in \code{index_file} so the Q IDE's Plots
+#' pane can pick it up and display it in-app on every platform.
+#'
+#' @param plot_dir Directory where plot PNG snapshots and the index file
+#'   are written. Created if it doesn't already exist.
+#' @export
+init_plot_capture <- function(plot_dir) {
+  dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
+  index_file <- file.path(plot_dir, "rgui2_plot_index.txt")
+
+  env <- new.env(parent = emptyenv())
+  env$dev_counter    <- 0L
+  env$snap_counter   <- 0L
+  env$last_snap_size <- -1L
+
+  options(device = function(width = 7, height = 5, ...) {
+    env$dev_counter <- env$dev_counter + 1L
+    fname <- file.path(plot_dir, sprintf("rgui2_dev_%06d.png", env$dev_counter))
+    grDevices::png(fname,
+                   width  = round(width  * 96),
+                   height = round(height * 96),
+                   res    = 96, ...)
+    grDevices::dev.control(displaylist = "enable")
+    invisible(NULL)
+  })
+
+  cb_name <- "rgui2_plot_capture"
+  if (cb_name %in% getTaskCallbackNames())
+    removeTaskCallback(cb_name)
+
+  addTaskCallback(function(expr, value, ok, visible) {
+    if (grDevices::dev.cur() != 1L) {
+      tryCatch({
+        recorded <- grDevices::recordPlot()
+        if (length(recorded[[1]]) > 0L) {
+          curr_file <- file.path(plot_dir, "rgui2_current.png")
+          grDevices::png(curr_file, width = 800L, height = 600L, res = 96L)
+          grDevices::replayPlot(recorded)
+          grDevices::dev.off()
+          new_size <- file.size(curr_file)
+          if (!identical(new_size, env$last_snap_size)) {
+            env$last_snap_size <- new_size
+            env$snap_counter   <- env$snap_counter + 1L
+            snap_file <- file.path(plot_dir,
+                                   sprintf("rgui2_snap_%06d.png", env$snap_counter))
+            file.copy(curr_file, snap_file, overwrite = TRUE)
+            writeLines(snap_file, index_file)
+          }
+        }
+      }, error = function(e) NULL)
+    }
+    TRUE
+  }, name = cb_name)
+
+  invisible(NULL)
+}
+
 #' Clear the console
 #' @export
 clear <- function() {
