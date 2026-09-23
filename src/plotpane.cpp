@@ -6,6 +6,7 @@
 #include <QTextStream>
 #include <QResizeEvent>
 #include <QSizePolicy>
+#include <QScrollBar>
 
 PlotPane::PlotPane(const QString &plotDir, QWidget *parent)
     : QWidget(parent)
@@ -103,7 +104,10 @@ void PlotPane::loadPlot(const QString &filePath)
     m_scrollArea->setWidgetResizable(false);
 
     if (!m_userZoomed)
+    {
         zoomFit();   // auto-fit new plots unless the user has manually zoomed
+        scheduleFit();
+    }
     else
         applyZoom();
 
@@ -118,6 +122,19 @@ void PlotPane::applyZoom()
     m_imageLabel->setPixmap(
         m_currentPixmap.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     m_imageLabel->resize(scaledSize);
+}
+
+void PlotPane::scheduleFit()
+{
+    if (m_userZoomed || m_fitPending)
+        return;
+
+    m_fitPending = true;
+    QTimer::singleShot(0, this, [this]() {
+        m_fitPending = false;
+        if (!m_userZoomed)
+            zoomFit();
+    });
 }
 
 // ── Slots ─────────────────────────────────────────────────────────────────────
@@ -157,12 +174,26 @@ void PlotPane::zoomFit()
 {
     if (m_currentPixmap.isNull()) return;
 
-    QSize available = m_scrollArea->viewport()->size();
-    QSize img       = m_currentPixmap.size();
+    // Fit to the pane's available width (not height), so a freshly-drawn
+    // plot always starts as large as horizontal space allows; vertical
+    // scrolling (already supported) takes over if that makes it taller than
+    // the viewport.
+    int available = m_scrollArea->viewport()->size().width();
+    int imgWidth  = m_currentPixmap.size().width();
+    if (imgWidth <= 0) return;
 
-    double scaleW = static_cast<double>(available.width())  / img.width();
-    double scaleH = static_cast<double>(available.height()) / img.height();
-    m_zoomFactor  = qMin(scaleW, scaleH);
+    // A tall image can make the vertical scrollbar appear after the first
+    // fit, reducing the usable width. Account for that scrollbar up front;
+    // scheduleFit() handles the final layout pass when Qt updates visibility.
+    int viewportHeight = m_scrollArea->viewport()->size().height();
+    if (viewportHeight > 0
+        && !m_scrollArea->verticalScrollBar()->isVisible()
+        && m_currentPixmap.height() * available / imgWidth > viewportHeight) {
+        available -= m_scrollArea->verticalScrollBar()->sizeHint().width();
+    }
+    available = qMax(1, available);
+
+    m_zoomFactor = static_cast<double>(available) / imgWidth;
     applyZoom();
 }
 
@@ -170,5 +201,5 @@ void PlotPane::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     if (!m_userZoomed)
-        zoomFit();
+        scheduleFit();
 }

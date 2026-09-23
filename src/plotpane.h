@@ -39,6 +39,7 @@ private slots:
 private:
     void loadPlot(const QString &filePath);
     void applyZoom();
+    void scheduleFit();
 
     QString m_plotDir;
     QString m_currentFile;
@@ -54,6 +55,7 @@ private:
 
     double  m_zoomFactor  = 1.0;
     bool    m_userZoomed  = false;   // true once user manually zoomed
+    bool    m_fitPending  = false;
     QPixmap m_currentPixmap;
 };
 
