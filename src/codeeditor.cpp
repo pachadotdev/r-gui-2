@@ -388,13 +388,13 @@ QString CodeEditor::findRscriptBinary()
     return s_cachedPath;
 }
 
-void CodeEditor::fetchFunctionInfoFromR(const QString &funcName, const QString &pkg,
+bool CodeEditor::fetchFunctionInfoFromR(const QString &funcName, const QString &pkg,
                                        QStringList &outArgs, QString &outCallTip)
 {
-    if (funcName.isEmpty()) return;
+    if (funcName.isEmpty()) return false;
 
     QString rscript = findRscriptBinary();
-    if (rscript.isEmpty()) return;
+    if (rscript.isEmpty()) return false;
 
     QString script = QString(R"(
 invisible(utils:::rc.settings())
@@ -453,29 +453,39 @@ cat(trimws(usage))
 
     QProcess proc;
     proc.start(rscript, QStringList() << "--vanilla" << "-e" << script);
-    if (proc.waitForFinished(1500)) {
-        QString output = QString::fromUtf8(proc.readAllStandardOutput());
-        int argsIdx = output.indexOf("===ARGS===");
-        int usageIdx = output.indexOf("===USAGE===");
-        if (argsIdx >= 0) {
-            int endArgs = (usageIdx >= 0) ? usageIdx : output.length();
-            QString argsSection = output.mid(argsIdx + 10, endArgs - (argsIdx + 10)).trimmed();
-            if (!argsSection.isEmpty()) {
-                const QStringList rawList = argsSection.split('\n', Qt::SkipEmptyParts);
-                for (const QString &raw : rawList) {
-                    QString a = raw.trimmed();
-                    if (a.isEmpty()) continue;
-                    if (a.endsWith('=')) {
-                        a = a.left(a.length() - 1).trimmed() + " = ";
-                    }
-                    outArgs.append(a);
+    // Resolving an unqualified function name (pkg empty) requires scanning every
+    // installed package's namespace, which can take several seconds. A qualified
+    // pkg::fun lookup only loads that one package and is near-instant. Give the
+    // unqualified case a much larger budget so it isn't killed before it finds the match.
+    const int timeoutMs = pkg.isEmpty() ? 8000 : 1500;
+    if (!proc.waitForFinished(timeoutMs)) {
+        proc.kill();
+        proc.waitForFinished(200);
+        return false;
+    }
+
+    QString output = QString::fromUtf8(proc.readAllStandardOutput());
+    int argsIdx = output.indexOf("===ARGS===");
+    int usageIdx = output.indexOf("===USAGE===");
+    if (argsIdx >= 0) {
+        int endArgs = (usageIdx >= 0) ? usageIdx : output.length();
+        QString argsSection = output.mid(argsIdx + 10, endArgs - (argsIdx + 10)).trimmed();
+        if (!argsSection.isEmpty()) {
+            const QStringList rawList = argsSection.split('\n', Qt::SkipEmptyParts);
+            for (const QString &raw : rawList) {
+                QString a = raw.trimmed();
+                if (a.isEmpty()) continue;
+                if (a.endsWith('=')) {
+                    a = a.left(a.length() - 1).trimmed() + " = ";
                 }
+                outArgs.append(a);
             }
         }
-        if (usageIdx >= 0) {
-            outCallTip = output.mid(usageIdx + 11).trimmed();
-        }
     }
+    if (usageIdx >= 0) {
+        outCallTip = output.mid(usageIdx + 11).trimmed();
+    }
+    return true;
 }
 
 static QMap<QString, QStringList> s_cachedArgNames;
@@ -490,7 +500,12 @@ void CodeEditor::ensureFunctionInfo(const QString &funcName, const QString &pkg)
 
     QStringList args;
     QString callTip;
-    fetchFunctionInfoFromR(funcName, pkg, args, callTip);
+    // Only cache the result if the R process actually completed; if it timed out,
+    // leave the cache key absent so a later attempt (e.g. after typing ::) can retry
+    // instead of permanently remembering an empty/failed lookup.
+    if (!fetchFunctionInfoFromR(funcName, pkg, args, callTip)) {
+        return;
+    }
 
     s_cachedArgNames.insert(cacheKey, args);
     s_cachedCallTips.insert(cacheKey, callTip);

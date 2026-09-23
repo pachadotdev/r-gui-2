@@ -65,7 +65,7 @@ private:
     QString textUnderCursor() const;
     static QString findRscriptBinary();
     static void ensureFunctionInfo(const QString &funcName, const QString &pkg);
-    static void fetchFunctionInfoFromR(const QString &funcName, const QString &pkg,
+    static bool fetchFunctionInfoFromR(const QString &funcName, const QString &pkg,
                                        QStringList &outArgs, QString &outCallTip);
     static QStringList getInstalledRPackages();
     static QStringList getPackageExports(const QString &packageName);
