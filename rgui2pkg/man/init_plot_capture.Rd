@@ -8,16 +8,19 @@ init_plot_capture(plot_dir)
 }
 
 \arguments{
-\item{plot_dir}{Directory where plot PNG snapshots and the index file
-  are written. Created if it doesn't already exist.}
+\item{plot_dir}{Directory where the plot PNG files are written. Created
+  if it doesn't already exist.}
 }
 
 \description{
 Redirects R's default graphics device so plots never open a disruptive
-native OS popup window (X11/Windows/Quartz). Instead, each new plotting
-device renders straight to an offscreen PNG file, and after every
-top-level command the current plot (if changed) is snapshotted to
-\code{plot_dir} and recorded in \code{index_file} so the Q IDE's Plots
-pane can pick it up and display it in-app on every platform.
+native OS popup window (X11/Windows/Quartz). Instead, plotting is
+redirected to a small offscreen PNG device, and after every top-level
+command the current plot (if changed) is re-rendered into a single,
+fixed-name PNG file (\code{rgui2_current.png}) inside \code{plot_dir} so
+the Q IDE's Plots pane can watch that one file and display it in-app on
+every platform. Both backing files are reused/overwritten in place;
+no additional per-plot files accumulate on disk.
 }
+
 

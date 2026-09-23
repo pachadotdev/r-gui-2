@@ -75,6 +75,7 @@ private:
 
     void startPty();
     void writeToPty(const QByteArray &data);
+    void writeToPtySilent(const QByteArray &data);  // POSIX: written without local echo
     void sendOutput(const QByteArray &data);   // queued-connected to reader thread
     void doResize(int cols, int rows);
     void onPtyReaderFinished();                // auto-restart R when the process exits

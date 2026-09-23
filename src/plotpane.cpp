@@ -10,7 +10,7 @@
 PlotPane::PlotPane(const QString &plotDir, QWidget *parent)
     : QWidget(parent)
     , m_plotDir(plotDir)
-    , m_indexFile(QDir(plotDir).filePath("rgui2_plot_index.txt"))
+    , m_currentFile(QDir(plotDir).filePath("rgui2_current.png"))
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -41,6 +41,8 @@ PlotPane::PlotPane(const QString &plotDir, QWidget *parent)
     m_scrollArea->setAlignment(Qt::AlignCenter);
     m_scrollArea->setBackgroundRole(QPalette::Dark);
     m_scrollArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     m_imageLabel = new QLabel(this);
     m_imageLabel->setAlignment(Qt::AlignCenter);
@@ -50,30 +52,32 @@ PlotPane::PlotPane(const QString &plotDir, QWidget *parent)
     m_imageLabel->setWordWrap(true);
 
     m_scrollArea->setWidget(m_imageLabel);
+    // Resizable while showing the placeholder text (so it fills/wraps nicely
+    // across the viewport); switched to false once a real plot loads so the
+    // label can be its own explicit zoomed size and the scroll area shows
+    // scrollbars instead of always stretching the image to fit.
     m_scrollArea->setWidgetResizable(true);
     layout->addWidget(m_scrollArea);
 
     // ── File system watcher ──────────────────────────────────────────────────
+    // Watch a single fixed-name file (rgui2_current.png). It doesn't exist
+    // until the first plot is drawn, so also watch the containing directory
+    // to catch its creation, then switch to watching the file itself.
     QDir().mkpath(plotDir);
 
-    {
-        QFile f(m_indexFile);
-        if (!f.exists() && f.open(QIODevice::WriteOnly))
-            f.close();
-    }
-
     m_watcher = new QFileSystemWatcher(this);
-    m_watcher->addPath(m_indexFile);
     m_watcher->addPath(plotDir);
+    if (QFile::exists(m_currentFile))
+        m_watcher->addPath(m_currentFile);
 
     m_reloadTimer = new QTimer(this);
     m_reloadTimer->setSingleShot(true);
     m_reloadTimer->setInterval(150);
 
     connect(m_watcher,     &QFileSystemWatcher::fileChanged,
-            this, &PlotPane::onIndexFileChanged);
+            this, &PlotPane::onFileChanged);
     connect(m_watcher,     &QFileSystemWatcher::directoryChanged,
-            this, &PlotPane::onIndexFileChanged);
+            this, &PlotPane::onFileChanged);
     connect(m_reloadTimer, &QTimer::timeout, this, &PlotPane::refresh);
 
     connect(m_zoomInBtn,  &QPushButton::clicked, this, &PlotPane::zoomIn);
@@ -93,12 +97,17 @@ void PlotPane::loadPlot(const QString &filePath)
     if (px.isNull()) return;
 
     m_currentPixmap = px;
-    m_currentFile   = filePath;
+    // Once a real plot is showing, let the label keep its own explicit
+    // (possibly zoomed) size instead of being force-fit to the viewport, so
+    // scrollbars appear correctly when zoomed in.
+    m_scrollArea->setWidgetResizable(false);
 
     if (!m_userZoomed)
         zoomFit();   // auto-fit new plots unless the user has manually zoomed
     else
         applyZoom();
+
+    emit plotUpdated();
 }
 
 void PlotPane::applyZoom()
@@ -113,26 +122,21 @@ void PlotPane::applyZoom()
 
 // ── Slots ─────────────────────────────────────────────────────────────────────
 
-void PlotPane::onIndexFileChanged(const QString & /*path*/)
+void PlotPane::onFileChanged(const QString & /*path*/)
 {
-    if (!m_watcher->files().contains(m_indexFile))
-        m_watcher->addPath(m_indexFile);
+    // grDevices::png() re-opening the file can drop it from the watch list
+    // (some platforms report the change as a remove+create); re-add it.
+    if (QFile::exists(m_currentFile) && !m_watcher->files().contains(m_currentFile))
+        m_watcher->addPath(m_currentFile);
     m_reloadTimer->start();
 }
 
 void PlotPane::refresh()
 {
-    QFile f(m_indexFile);
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+    if (!QFile::exists(m_currentFile))
         return;
 
-    QString latestPlot = QTextStream(&f).readLine().trimmed();
-    f.close();
-
-    if (latestPlot.isEmpty() || !QFile::exists(latestPlot))
-        return;
-
-    loadPlot(latestPlot);
+    loadPlot(m_currentFile);
 }
 
 void PlotPane::zoomIn()

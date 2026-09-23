@@ -24,11 +24,14 @@ public:
 public slots:
     void refresh();
 
+signals:
+    void plotUpdated();
+
 protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private slots:
-    void onIndexFileChanged(const QString &path);
+    void onFileChanged(const QString &path);
     void zoomIn();
     void zoomOut();
     void zoomFit();
@@ -38,7 +41,6 @@ private:
     void applyZoom();
 
     QString m_plotDir;
-    QString m_indexFile;
     QString m_currentFile;
 
     QScrollArea  *m_scrollArea;

@@ -83,6 +83,12 @@ MainWindow::MainWindow(QWidget *parent)
     m_rightTabs->addTab(plotPane,  tr("Plots"));
     m_rightTabs->addTab(helpPane,  tr("Help"));
 
+    // Auto-switch to the Plots tab whenever a new/updated plot arrives, so
+    // running plotting code always brings the result into view.
+    connect(plotPane, &PlotPane::plotUpdated, this, [this]() {
+        m_rightTabs->setCurrentWidget(plotPane);
+    });
+
     // ── Outer horizontal splitter (left | center | right) ────────────────────
     m_outerSplitter = new QSplitter(Qt::Horizontal, this);
     m_outerSplitter->addWidget(fileBrowser);

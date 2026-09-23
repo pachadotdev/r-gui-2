@@ -579,6 +579,33 @@ void TerminalWidget::writeToPty(const QByteArray &data)
 #endif
 }
 
+// Writes data to the pty with local ECHO temporarily disabled, so the raw
+// bytes we inject (e.g. an internal `source('...')` wrapper call) never
+// appear in the terminal transcript. R's own prompt/echo (from `echo=TRUE`
+// inside source(), or the next "> " prompt) is unaffected since those are
+// printed by R itself, not echoed by the pty line discipline. Only used on
+// POSIX; on Windows the ConPTY-hosted console owns its own echo and cannot
+// be toggled from here, so this falls back to a normal (visible) write.
+void TerminalWidget::writeToPtySilent(const QByteArray &data)
+{
+#ifdef Q_OS_WIN
+    writeToPty(data);
+#else
+    if (ptyFd < 0) return;
+    struct termios tio{};
+    bool haveTio = (::tcgetattr(ptyFd, &tio) == 0);
+    if (haveTio) {
+        struct termios noecho = tio;
+        noecho.c_lflag &= ~static_cast<tcflag_t>(ECHO);
+        ::tcsetattr(ptyFd, TCSANOW, &noecho);
+    }
+    ::write(ptyFd, data.constData(), static_cast<size_t>(data.size()));
+    if (haveTio) {
+        ::tcsetattr(ptyFd, TCSANOW, &tio);
+    }
+#endif
+}
+
 // Called on the main thread via Qt::QueuedConnection from PtyReaderThread.
 void TerminalWidget::sendOutput(const QByteArray &data)
 {
@@ -645,9 +672,7 @@ void TerminalWidget::executeCommandSilent(const QString &command)
 {
     // Write to a temp file and source() with echo=FALSE so the command
     // text itself is not echoed in the terminal (same trick on all platforms).
-    // NOTE: R uses GNU readline which redisplays input; the source(...) line
-    // will still be visible in the console. For truly invisible execution,
-    // route the command through the rgui2::init_help_pane queue mechanism.
+    // Local ECHO is also suppressed for the wrapper line itself (POSIX only).
     QString pid     = QString::number(QCoreApplication::applicationPid());
     QString tmpPath = QDir::tempPath() + "/rgui2_cmd_" + pid + ".R";
     QFile f(tmpPath);
@@ -659,7 +684,7 @@ void TerminalWidget::executeCommandSilent(const QString &command)
     out << command << "\n";
     f.close();
     tmpPath.replace('\\', '/');
-    writeToPty(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
+    writeToPtySilent(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
                    .arg(tmpPath).toUtf8());
 }
 
@@ -670,7 +695,9 @@ void TerminalWidget::executeRCode(const QString &code)
         return;
     }
     // Multi-line: write to a temp file and source() with echo=TRUE so R prints
-    // each expression with indentation preserved.
+    // each expression with indentation preserved. The wrapper source(...) call
+    // itself is written with local ECHO suppressed (POSIX only) so only the
+    // code's own echoed lines/output show up, not the invocation line.
     QString pid     = QString::number(QCoreApplication::applicationPid());
     QString tmpPath = QDir::tempPath() + "/rgui2_run_" + pid + ".R";
     QFile f(tmpPath);
@@ -679,7 +706,7 @@ void TerminalWidget::executeRCode(const QString &code)
         out << code;
         f.close();
         tmpPath.replace('\\', '/');
-        writeToPty(QString("source('%1', echo=TRUE, max.deparse.length=Inf)\r")
+        writeToPtySilent(QString("source('%1', echo=TRUE, max.deparse.length=Inf)\r")
                        .arg(tmpPath).toUtf8());
     } else {
         executeCommand(code);

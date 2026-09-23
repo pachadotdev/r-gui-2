@@ -109,28 +109,30 @@ get_env_info <- function() {
 #' Initialise silent plot capture
 #'
 #' Redirects R's default graphics device so plots never open a disruptive
-#' native OS popup window (X11/Windows/Quartz). Instead, each new plotting
-#' device renders straight to an offscreen PNG file, and after every
-#' top-level command the current plot (if changed) is snapshotted to
-#' \code{plot_dir} and recorded in \code{index_file} so the Q IDE's Plots
-#' pane can pick it up and display it in-app on every platform.
+#' native OS popup window (X11/Windows/Quartz). Instead, plotting is
+#' redirected to a small offscreen PNG device, and after every top-level
+#' command the current plot (if changed) is re-rendered into a single,
+#' fixed-name PNG file (\code{rgui2_current.png}) inside \code{plot_dir} so
+#' the Q IDE's Plots pane can watch that one file and display it in-app on
+#' every platform. Both backing files are reused/overwritten in place;
+#' no additional per-plot files accumulate on disk.
 #'
-#' @param plot_dir Directory where plot PNG snapshots and the index file
-#'   are written. Created if it doesn't already exist.
+#' @param plot_dir Directory where the plot PNG files are written. Created
+#'   if it doesn't already exist.
 #' @export
 init_plot_capture <- function(plot_dir) {
   dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
-  index_file <- file.path(plot_dir, "rgui2_plot_index.txt")
 
-  env <- new.env(parent = emptyenv())
-  env$dev_counter    <- 0L
-  env$snap_counter   <- 0L
-  env$last_snap_size <- -1L
+  # Fixed, reused filenames: content of `device_file` is a throwaway working
+  # buffer (grDevices::png() needs *some* real file to open); the actual
+  # image shown by the IDE is `current_file`, re-rendered from the in-memory
+  # display list on every redraw. Neither file's *name* ever changes, so
+  # nothing new accumulates on disk across successive plots.
+  device_file  <- file.path(plot_dir, "rgui2_device.png")
+  current_file <- file.path(plot_dir, "rgui2_current.png")
 
   options(device = function(width = 7, height = 5, ...) {
-    env$dev_counter <- env$dev_counter + 1L
-    fname <- file.path(plot_dir, sprintf("rgui2_dev_%06d.png", env$dev_counter))
-    grDevices::png(fname,
+    grDevices::png(device_file,
                    width  = round(width  * 96),
                    height = round(height * 96),
                    res    = 96, ...)
@@ -147,19 +149,12 @@ init_plot_capture <- function(plot_dir) {
       tryCatch({
         recorded <- grDevices::recordPlot()
         if (length(recorded[[1]]) > 0L) {
-          curr_file <- file.path(plot_dir, "rgui2_current.png")
-          grDevices::png(curr_file, width = 800L, height = 600L, res = 96L)
+          # Re-rendering (rather than copying the raw device file) always
+          # updates current_file's mtime, so a simple file watcher on this
+          # one fixed path is enough to detect every redraw.
+          grDevices::png(current_file, width = 800L, height = 600L, res = 96L)
           grDevices::replayPlot(recorded)
           grDevices::dev.off()
-          new_size <- file.size(curr_file)
-          if (!identical(new_size, env$last_snap_size)) {
-            env$last_snap_size <- new_size
-            env$snap_counter   <- env$snap_counter + 1L
-            snap_file <- file.path(plot_dir,
-                                   sprintf("rgui2_snap_%06d.png", env$snap_counter))
-            file.copy(curr_file, snap_file, overwrite = TRUE)
-            writeLines(snap_file, index_file)
-          }
         }
       }, error = function(e) NULL)
     }
@@ -205,8 +200,8 @@ resolve_help_url <- function(topic, file = NULL) {
   # start = NA → start the httpd if not already running, else return the
   # current port. Using TRUE errors out with "server already running" on
   # some R versions.
-  port <- tryCatch(tools::startDynamicHelp(start = NA),
-                   error = function(e) tools::startDynamicHelp(start = FALSE))
+  port <- suppressMessages(tryCatch(tools::startDynamicHelp(start = NA),
+                   error = function(e) tools::startDynamicHelp(start = FALSE)))
   home <- sprintf("http://127.0.0.1:%d/doc/html/index.html", port)
 
   url <- tryCatch({
@@ -260,8 +255,8 @@ resolve_help_url <- function(topic, file = NULL) {
 #' @export
 init_help_pane <- function(port_file, queue_file, url_file, interval = 0.15) {
   # Start the httpd silently. start = NA is idempotent.
-  port <- tryCatch(tools::startDynamicHelp(start = NA),
-                   error = function(e) tools::startDynamicHelp(start = FALSE))
+  port <- suppressMessages(tryCatch(tools::startDynamicHelp(start = NA),
+                   error = function(e) tools::startDynamicHelp(start = FALSE)))
   try(writeLines(as.character(port), port_file), silent = TRUE)
 
   process_queue <- function() {
