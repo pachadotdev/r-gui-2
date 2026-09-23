@@ -4,6 +4,7 @@
 #include "thememanager.h"
 #include <QWebEngineView>
 #include <QWebChannel>
+#include <QTimer>
 
 // Forward declaration so TerminalBridge can hold a pointer before TerminalWidget is defined.
 class TerminalWidget;
@@ -72,6 +73,7 @@ private:
     bool ptyStarted = false;
     bool pageLoaded = false;
     int  pendingFontSize = 0;   // 0 = none pending
+    QTimer *fitTimer = nullptr;
 
     void startPty();
     void writeToPty(const QByteArray &data);
@@ -87,6 +89,7 @@ private:
     ConPtyImpl *pty = nullptr;
 #else
     int   ptyFd    = -1;
+    int   ptySlaveFd = -1;
     pid_t shellPid = -1;
 #endif
 };

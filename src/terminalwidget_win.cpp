@@ -724,23 +724,7 @@ void TerminalWidget::executeCommandSilent(const QString &command)
 
 void TerminalWidget::executeRCode(const QString &code)
 {
-    if (!code.contains('\n')) {
-        writeToPty((code.trimmed() + "\r").toUtf8());
-        return;
-    }
-    QString tmpPath = QDir::tempPath()
-        + QString("/rgui2_run_%1.R").arg(QCoreApplication::applicationPid());
-    QFile f(tmpPath);
-    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&f);
-        out << code;
-        f.close();
-        tmpPath.replace('\\', '/');
-        writeToPty(QString("source('%1', echo=TRUE, max.deparse.length=Inf)\r")
-                       .arg(tmpPath).toUtf8());
-    } else {
-        writeToPty((code + "\r").toUtf8());
-    }
+    writeToPty((code + "\r").toUtf8());
 }
 
 void TerminalWidget::contextMenuEvent(QContextMenuEvent *event)

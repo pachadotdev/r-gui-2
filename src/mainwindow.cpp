@@ -758,7 +758,12 @@ void MainWindow::runCurrentLine()
     if (!selection.isEmpty()) {
         // If there's a selection, run it
         selection.replace(QChar(0x2029), '\n');
-        console->executeRCode(selection);
+        while (selection.endsWith('\n'))
+            selection.chop(1);
+        if (selection.contains('\n'))
+            console->executeRCode(selection);
+        else
+            console->executeCommand(selection);
         return;
     }
     
@@ -781,7 +786,12 @@ void MainWindow::runSelection()
     if (!selection.isEmpty()) {
         // Qt uses Unicode paragraph separator, replace with newline
         selection.replace(QChar(0x2029), '\n');
-        console->executeRCode(selection);
+        while (selection.endsWith('\n'))
+            selection.chop(1);
+        if (selection.contains('\n'))
+            console->executeRCode(selection);
+        else
+            console->executeCommand(selection);
     }
 }
 

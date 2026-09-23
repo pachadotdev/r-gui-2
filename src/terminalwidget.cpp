@@ -282,6 +282,17 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
     channel->registerObject(QStringLiteral("bridge"), bridge);
     page()->setWebChannel(channel);
 
+    // WebEngine may deliver the resize event before the page's CSS viewport
+    // has settled. Debounce fitting so maximize and splitter changes are
+    // measured using the final viewport dimensions.
+    fitTimer = new QTimer(this);
+    fitTimer->setSingleShot(true);
+    fitTimer->setInterval(50);
+    connect(fitTimer, &QTimer::timeout, this, [this]() {
+        if (pageLoaded)
+            page()->runJavaScript("if(window.fitTerminal) window.fitTerminal();");
+    });
+
     // ── Load the xterm.js terminal page ────────────────────────────────────
     // PTY is started when xterm.js calls bridge.ready() after QWebChannel init.
     page()->load(QUrl(QStringLiteral("qrc:///xterm/terminal.html")));
@@ -351,6 +362,10 @@ TerminalWidget::~TerminalWidget()
     if (ptyFd >= 0) {
         ::close(ptyFd);
         ptyFd = -1;
+    }
+    if (ptySlaveFd >= 0) {
+        ::close(ptySlaveFd);
+        ptySlaveFd = -1;
     }
 #endif
     // 3. Wait for the reader thread to finish (fd/handle closure makes it exit).
@@ -486,7 +501,8 @@ void TerminalWidget::startPty()
     QByteArray resolvedBuf = resolvedPath.toLocal8Bit();
     argv[0] = resolvedBuf.constData();
 
-    shellPid = forkpty(&ptyFd, nullptr, nullptr, &ws);
+    char slaveName[256] = {};
+    shellPid = forkpty(&ptyFd, slaveName, nullptr, &ws);
     if (shellPid == 0) {
         // Child: change to the requested working directory (fallback to home).
         const QString startDir = m_workingDir.isEmpty() ? QDir::homePath() : m_workingDir;
@@ -497,6 +513,7 @@ void TerminalWidget::startPty()
         ::_exit(1);  // execve failed
     }
     if (shellPid < 0) return;  // forkpty failed
+    ptySlaveFd = ::open(slaveName, O_RDWR | O_NOCTTY);
 
     auto *reader = new PtyReaderThread(ptyFd, this);
     ptyReader = reader;
@@ -526,6 +543,10 @@ void TerminalWidget::onPtyReaderFinished()
     if (ptyFd >= 0) {
         ::close(ptyFd);
         ptyFd = -1;
+    }
+    if (ptySlaveFd >= 0) {
+        ::close(ptySlaveFd);
+        ptySlaveFd = -1;
     }
 #else
     if (pty) {
@@ -592,16 +613,25 @@ void TerminalWidget::writeToPtySilent(const QByteArray &data)
     writeToPty(data);
 #else
     if (ptyFd < 0) return;
+    const int terminalFd = ptySlaveFd >= 0 ? ptySlaveFd : ptyFd;
     struct termios tio{};
-    bool haveTio = (::tcgetattr(ptyFd, &tio) == 0);
+    bool haveTio = (::tcgetattr(terminalFd, &tio) == 0);
     if (haveTio) {
         struct termios noecho = tio;
         noecho.c_lflag &= ~static_cast<tcflag_t>(ECHO);
-        ::tcsetattr(ptyFd, TCSANOW, &noecho);
+        ::tcsetattr(terminalFd, TCSANOW, &noecho);
     }
     ::write(ptyFd, data.constData(), static_cast<size_t>(data.size()));
     if (haveTio) {
-        ::tcsetattr(ptyFd, TCSANOW, &tio);
+        // The PTY can echo the queued bytes after write() returns. Restoring
+        // ECHO synchronously therefore races with the line discipline and
+        // leaks the injected source() command into the terminal. Keep it
+        // disabled briefly while R consumes the line, then restore the user's
+        // original terminal settings.
+        QTimer::singleShot(50, this, [this, terminalFd, tio]() {
+            if (ptySlaveFd >= 0)
+                ::tcsetattr(terminalFd, TCSANOW, &tio);
+        });
     }
 #endif
 }
@@ -646,9 +676,7 @@ void TerminalWidget::setTheme(const EditorTheme &theme)
 void TerminalWidget::resizeEvent(QResizeEvent *event)
 {
     QWebEngineView::resizeEvent(event);
-    // Always re-fit: doResize() is a no-op until ptyFd is valid, and
-    // fitTerminal() is guarded on the JS side, so this is always safe.
-    page()->runJavaScript("if(window.fitTerminal) window.fitTerminal();");
+    fitTimer->start();
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -690,27 +718,9 @@ void TerminalWidget::executeCommandSilent(const QString &command)
 
 void TerminalWidget::executeRCode(const QString &code)
 {
-    if (!code.contains('\n')) {
-        writeToPty((code.trimmed() + "\r").toUtf8());
-        return;
-    }
-    // Multi-line: write to a temp file and source() with echo=TRUE so R prints
-    // each expression with indentation preserved. The wrapper source(...) call
-    // itself is written with local ECHO suppressed (POSIX only) so only the
-    // code's own echoed lines/output show up, not the invocation line.
-    QString pid     = QString::number(QCoreApplication::applicationPid());
-    QString tmpPath = QDir::tempPath() + "/rgui2_run_" + pid + ".R";
-    QFile f(tmpPath);
-    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&f);
-        out << code;
-        f.close();
-        tmpPath.replace('\\', '/');
-        writeToPtySilent(QString("source('%1', echo=TRUE, max.deparse.length=Inf)\r")
-                       .arg(tmpPath).toUtf8());
-    } else {
-        executeCommand(code);
-    }
+    // Feed the selection directly to R's readline/parse loop. This preserves
+    // native prompts, blank lines, continuation prompts, and printed results.
+    writeToPty((code + "\r").toUtf8());
 }
 
 // ── Context menu ──────────────────────────────────────────────────────────────

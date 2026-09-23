@@ -57,7 +57,6 @@ window.fitTerminal = function() {
   if (window._bridge)
     window._bridge.resizePty(term.cols, term.rows);
 };
-
 // Called from C++ Ctrl+/Ctrl- shortcuts.
 window.adjustFontSize = function(deltaPt) {
   var currentPt = Math.round(term.options.fontSize * 72 / 96);
