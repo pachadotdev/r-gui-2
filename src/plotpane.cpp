@@ -88,13 +88,9 @@ PlotPane::PlotPane(const QString &plotChannelFile, const QString &plotSizeFile,
     // uses the available space rather than the construction-time size.
     QTimer::singleShot(250, this, [this]() {
         writePlotSize();
-        if (m_resizeTimer)
-            m_resizeTimer->start();
     });
     QTimer::singleShot(750, this, [this]() {
         writePlotSize();
-        if (m_resizeTimer)
-            m_resizeTimer->start();
     });
 }
 

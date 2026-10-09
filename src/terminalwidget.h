@@ -73,7 +73,10 @@ private:
     QWebChannel    *channel = nullptr;
     bool ptyStarted = false;
     bool pageLoaded = false;
-    bool  suppressInternalPrompts = false;
+    bool  suppressInternalOutput = false;
+    bool  suppressInternalPrompt = false;
+    QByteArray internalOutputBuffer;
+    QByteArray internalOutputMarker;
     int  pendingFontSize = 0;   // 0 = none pending
     QTimer *fitTimer = nullptr;
 

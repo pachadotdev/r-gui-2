@@ -710,13 +710,20 @@ void TerminalWidget::executeCommandSilent(const QString &command)
         + QString("/rgui2_cmd_%1.R").arg(QCoreApplication::applicationPid());
     QFile f(tmpPath);
     if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        const QByteArray marker = QByteArray("__RGGUI_INTERNAL_DONE_")
+            + QByteArray::number(QCoreApplication::applicationPid()) + "__";
         QTextStream out(&f);
-        out << command << "\n";
+        out << command << "\n"
+            << "cat('" << QString::fromLatin1(marker) << "\\n')\n";
         f.close();
         tmpPath.replace('\\', '/');
-        suppressInternalPrompts = true;
-        QTimer::singleShot(500, this, [this]() {
-            suppressInternalPrompts = false;
+        internalOutputMarker = marker;
+        internalOutputBuffer.clear();
+        suppressInternalOutput = true;
+        QTimer::singleShot(2000, this, [this]() {
+            suppressInternalOutput = false;
+            suppressInternalPrompt = false;
+            internalOutputBuffer.clear();
         });
         writeToPty(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
                        .arg(tmpPath).toUtf8());

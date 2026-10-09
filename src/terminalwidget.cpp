@@ -646,14 +646,37 @@ void TerminalWidget::writeToPtySilent(const QByteArray &data)
 // Called on the main thread via Qt::QueuedConnection from PtyReaderThread.
 void TerminalWidget::sendOutput(const QByteArray &data)
 {
-    QString output = QString::fromUtf8(data);
+    QByteArray visibleData = data;
+    if (suppressInternalOutput) {
+        internalOutputBuffer.append(data);
+        const qsizetype markerIndex = internalOutputBuffer.indexOf(internalOutputMarker);
+        if (markerIndex < 0)
+            return;
+        visibleData = internalOutputBuffer.mid(
+            markerIndex + internalOutputMarker.size());
+        suppressInternalOutput = false;
+        suppressInternalPrompt = true;
+        internalOutputBuffer.clear();
+    }
+
+    if (suppressInternalPrompt) {
+        internalOutputBuffer.append(visibleData);
+        const QString pending = QString::fromUtf8(internalOutputBuffer);
+        static const QRegularExpression internalPrompt(
+            QStringLiteral(R"(^(?:\r?\n)*\s*(?:>\s*)+)"));
+        const QRegularExpressionMatch match = internalPrompt.match(pending);
+        if (!match.hasMatch())
+            return;
+        const qsizetype consumed = match.capturedLength();
+        visibleData = internalOutputBuffer.mid(consumed);
+        internalOutputBuffer.clear();
+        suppressInternalPrompt = false;
+    }
+
+    QString output = QString::fromUtf8(visibleData);
     static const QRegularExpression internalSource(
         QStringLiteral(R"(>?\s*source\('/tmp/rgui2_cmd_[0-9]+\.R', echo=FALSE, print\.eval=FALSE, local=FALSE\))"));
     output.replace(internalSource, QString());
-    if (suppressInternalPrompts) {
-        output.replace(QStringLiteral("\r\n>\r\n"), QStringLiteral("\r\n"));
-        output.replace(QStringLiteral("\n>\n"), QStringLiteral("\n"));
-    }
     if (output.isEmpty())
         return;
 
@@ -733,13 +756,20 @@ void TerminalWidget::executeCommandSilent(const QString &command)
         writeToPtySilent((command + "\r").toUtf8());
         return;
     }
+    const QByteArray marker = QByteArray("__RGGUI_INTERNAL_DONE_")
+        + QByteArray::number(QCoreApplication::applicationPid()) + "__";
     QTextStream out(&f);
-    out << command << "\n";
+    out << command << "\n"
+        << "cat('" << QString::fromLatin1(marker) << "\\n')\n";
     f.close();
     tmpPath.replace('\\', '/');
-    suppressInternalPrompts = true;
-    QTimer::singleShot(500, this, [this]() {
-        suppressInternalPrompts = false;
+    internalOutputMarker = marker;
+    internalOutputBuffer.clear();
+    suppressInternalOutput = true;
+    QTimer::singleShot(2000, this, [this]() {
+        suppressInternalOutput = false;
+        suppressInternalPrompt = false;
+        internalOutputBuffer.clear();
     });
     writeToPtySilent(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
                    .arg(tmpPath).toUtf8());
