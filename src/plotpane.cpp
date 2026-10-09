@@ -82,6 +82,20 @@ PlotPane::PlotPane(const QString &plotChannelFile, const QString &plotSizeFile,
     connect(m_zoomInBtn,  &QPushButton::clicked, this, &PlotPane::zoomIn);
     connect(m_zoomOutBtn, &QPushButton::clicked, this, &PlotPane::zoomOut);
     connect(m_zoomFitBtn, &QPushButton::clicked, this, &PlotPane::zoomFit);
+
+    // The first size is written before the pane has completed its layout.
+    // Refresh once the viewport has its real dimensions so the initial plot
+    // uses the available space rather than the construction-time size.
+    QTimer::singleShot(250, this, [this]() {
+        writePlotSize();
+        if (m_resizeTimer)
+            m_resizeTimer->start();
+    });
+    QTimer::singleShot(750, this, [this]() {
+        writePlotSize();
+        if (m_resizeTimer)
+            m_resizeTimer->start();
+    });
 }
 
 PlotPane::~PlotPane() = default;
@@ -268,11 +282,7 @@ void PlotPane::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     writePlotSize();
-    // There is nothing to replay until a device has produced a plot.  In
-    // particular, avoid sending internal refresh commands during the initial
-    // splitter/layout pass; those commands otherwise appear as extra
-    // source() entries in the R console.
-    if (m_resizeTimer && !m_currentPixmap.isNull())
+    if (m_resizeTimer)
         m_resizeTimer->start();
     if (!m_userZoomed)
         scheduleFit();

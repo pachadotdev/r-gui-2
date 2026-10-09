@@ -13,6 +13,7 @@
 #include <QFontMetrics>
 #include <QMenu>
 #include <QProcessEnvironment>
+#include <QRegularExpression>
 #include <QResizeEvent>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -645,8 +646,19 @@ void TerminalWidget::writeToPtySilent(const QByteArray &data)
 // Called on the main thread via Qt::QueuedConnection from PtyReaderThread.
 void TerminalWidget::sendOutput(const QByteArray &data)
 {
+    QString output = QString::fromUtf8(data);
+    static const QRegularExpression internalSource(
+        QStringLiteral(R"(>?\s*source\('/tmp/rgui2_cmd_[0-9]+\.R', echo=FALSE, print\.eval=FALSE, local=FALSE\))"));
+    output.replace(internalSource, QString());
+    if (suppressInternalPrompts) {
+        output.replace(QStringLiteral("\r\n>\r\n"), QStringLiteral("\r\n"));
+        output.replace(QStringLiteral("\n>\n"), QStringLiteral("\n"));
+    }
+    if (output.isEmpty())
+        return;
+
     // Base64-encode for safe transport through QWebChannel's JSON serialisation.
-    emit bridge->outputReady(QString::fromLatin1(data.toBase64()));
+    emit bridge->outputReady(QString::fromLatin1(output.toUtf8().toBase64()));
 }
 
 void TerminalWidget::doResize(int cols, int rows)
@@ -712,9 +724,25 @@ void TerminalWidget::executeCommand(const QString &command)
 
 void TerminalWidget::executeCommandSilent(const QString &command)
 {
-    // Send the command directly so silent execution never exposes an
-    // implementation detail such as a temporary source() wrapper.
-    writeToPtySilent((command + "\r").toUtf8());
+    // Source with echo disabled so internal refreshes do not appear as user
+    // commands in the console.
+    QString pid     = QString::number(QCoreApplication::applicationPid());
+    QString tmpPath = QDir::tempPath() + "/rgui2_cmd_" + pid + ".R";
+    QFile f(tmpPath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        writeToPtySilent((command + "\r").toUtf8());
+        return;
+    }
+    QTextStream out(&f);
+    out << command << "\n";
+    f.close();
+    tmpPath.replace('\\', '/');
+    suppressInternalPrompts = true;
+    QTimer::singleShot(500, this, [this]() {
+        suppressInternalPrompts = false;
+    });
+    writeToPtySilent(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
+                   .arg(tmpPath).toUtf8());
 }
 
 void TerminalWidget::executeRCode(const QString &code)
