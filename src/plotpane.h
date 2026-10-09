@@ -44,6 +44,7 @@ private:
     void writePlotSize();
     void applyZoom();
     void scheduleFit();
+    void scheduleInitialRefresh();
 
     QString m_plotChannelFile;
     QString m_plotSizeFile;
@@ -61,6 +62,7 @@ private:
     double  m_zoomFactor  = 1.0;
     bool    m_userZoomed  = false;   // true once user manually zoomed
     bool    m_fitPending  = false;
+    bool    m_initialRefreshScheduled = false;
     QPixmap m_currentPixmap;
 };
 

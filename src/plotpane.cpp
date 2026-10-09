@@ -133,6 +133,7 @@ void PlotPane::readPlotData()
         } else {
             applyZoom();
         }
+        scheduleInitialRefresh();
         emit plotUpdated();
         return;
     }
@@ -166,6 +167,7 @@ void PlotPane::readPlotData()
     else
         applyZoom();
 
+    scheduleInitialRefresh();
     emit plotUpdated();
 }
 
@@ -210,6 +212,18 @@ void PlotPane::scheduleFit()
         m_fitPending = false;
         if (!m_userZoomed)
             zoomFit();
+    });
+}
+
+void PlotPane::scheduleInitialRefresh()
+{
+    if (m_initialRefreshScheduled)
+        return;
+
+    m_initialRefreshScheduled = true;
+    QTimer::singleShot(0, this, [this]() {
+        writePlotSize();
+        emit plotResizeRequested();
     });
 }
 
