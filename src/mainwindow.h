@@ -71,7 +71,6 @@ private:
     QMenu *helpMenu = nullptr;
     QAction *toggleSuggestionsAct = nullptr;
 
-    QString currentFile;
     int     m_globalFontSize = 12;  // shared font size for editors + terminals
     bool    m_suggestionsEnabled = true;
     QString m_currentDir;           // last directory opened via Open Directory
@@ -79,6 +78,8 @@ private:
     CodeEditor *getCurrentEditor();
     void addNewEditorTab(const QString &title = "Untitled");
     void updateTabTitle(int index, bool modified);
+    void setWorkingDirectory(const QString &path);
+    void executeEditorCode(QString code);
 };
 
 #endif // MAINWINDOW_H

@@ -20,10 +20,7 @@
 #include <QTimer>
 #include <QStandardPaths>
 #include <QDir>
-#include <QApplication>
 #include <QSplitter>
-#include <QEvent>
-#include <QResizeEvent>
 #include <QDialog>
 #include <QLabel>
 #include <QListWidget>
@@ -31,6 +28,7 @@
 #include <QShortcut>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QApplication>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -327,14 +325,8 @@ void MainWindow::setupConnections()
 
         // .rproject: switch project directory
         if (suffix == "rproject") {
-            QString projectDir = fileInfo.absolutePath();
-            fileBrowser->setRootPath(projectDir);
-            m_currentDir = projectDir;
-            if (console) {
-                console->executeCommand(
-                    QString("setwd('%1')").arg(QString(projectDir).replace('\\', '/')));
-                statusBar()->showMessage(tr("Opened project: %1").arg(fileInfo.fileName()), 5000);
-            }
+            setWorkingDirectory(fileInfo.absolutePath());
+            statusBar()->showMessage(tr("Opened project: %1").arg(fileInfo.fileName()), 5000);
             return;
         }
 
@@ -490,28 +482,10 @@ void MainWindow::updateTabTitle(int index, bool modified)
     QString newTitle = modified ? baseTitle + " *" : baseTitle;
     editorTabs->setTabText(index, newTitle);
     
-    // Apply italic font style using QTabBar API
-    QFont tabFont = editorTabs->tabBar()->font();
-    tabFont.setItalic(modified);
-    
-    // Unfortunately QTabBar doesn't have per-tab font setting directly
-    // We need to use a custom approach with QProxyStyle or update all tabs
-    // For now, we'll use a stylesheet that applies to tabs with asterisk
-    QString stylesheet = QString(
-        "QTabBar::tab { font-style: normal; }"
-        "QTabBar::tab:selected { font-style: %1; }"
-    ).arg(modified ? "italic" : "normal");
-    
-    // Store modification state as a property for potential future use
+    // Keep the state available to future tab styling without changing the
+    // appearance of unrelated tabs.
     editorTabs->widget(index)->setProperty("modified", modified);
-    
-    // Set tooltip
     editorTabs->setTabToolTip(index, modified ? tr("Modified - %1").arg(baseTitle) : baseTitle);
-    
-    // Apply stylesheet to make current tab italic if modified
-    if (index == editorTabs->currentIndex()) {
-        editorTabs->setStyleSheet(stylesheet);
-    }
 }
 
 void MainWindow::newFile()
@@ -535,17 +509,9 @@ void MainWindow::openFile()
         
         // Special handling for .rproject files
         if (suffix == "rproject") {
-            QString projectDir = fileInfo.absolutePath();
-            
-            // Set file browser to project directory
-            fileBrowser->setRootPath(projectDir);
-            
-            // Set R working directory
-            if (console) {
-                QString rCommand = QString("setwd('%1')").arg(projectDir.replace('\\', '/'));
-                console->executeCommand(rCommand);
-                statusBar()->showMessage(tr("Opened project: %1").arg(fileInfo.fileName()), 5000);
-            }
+            setWorkingDirectory(fileInfo.absolutePath());
+            statusBar()->showMessage(tr("Opened project: %1").arg(fileInfo.fileName()), 5000);
+            return;
         }
         
         QFile file(fileName);
@@ -573,17 +539,7 @@ void MainWindow::openDirectory()
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     
     if (!dirPath.isEmpty()) {
-        // Remember for future terminal sessions.
-        m_currentDir = dirPath;
-
-        // Set file browser to this directory
-        fileBrowser->setRootPath(dirPath);
-        
-        // Set R working directory in the R console.
-        if (console) {
-            QString rCommand = QString("setwd('%1')").arg(QString(dirPath).replace('\\', '/'));
-            console->executeCommand(rCommand);
-        }
+        setWorkingDirectory(dirPath);
 
         // cd in every non-R terminal tab.
         const QString cdCmd = QString("cd '%1'\n").arg(dirPath);
@@ -649,13 +605,7 @@ void MainWindow::createProject()
         out << "LaTeX: pdfLaTeX\n";
         file.close();
         
-        // Open the directory and set working directory
-        fileBrowser->setRootPath(dirPath);
-        
-        if (console) {
-            QString rCommand = QString("setwd('%1')").arg(dirPath.replace('\\', '/'));
-            console->executeCommand(rCommand);
-        }
+        setWorkingDirectory(dirPath);
         
         QMessageBox::information(this, tr("Project Created"),
             tr("Project created successfully:\n%1").arg(rProjPath));
@@ -756,14 +706,7 @@ void MainWindow::runCurrentLine()
     // Check if there's a selection first
     QString selection = editor->textCursor().selectedText();
     if (!selection.isEmpty()) {
-        // If there's a selection, run it
-        selection.replace(QChar(0x2029), '\n');
-        while (selection.endsWith('\n'))
-            selection.chop(1);
-        if (selection.contains('\n'))
-            console->executeRCode(selection);
-        else
-            console->executeCommand(selection);
+        executeEditorCode(selection);
         return;
     }
     
@@ -772,9 +715,7 @@ void MainWindow::runCurrentLine()
     cursor.select(QTextCursor::LineUnderCursor);
     QString line = cursor.selectedText();
     
-    if (!line.trimmed().isEmpty()) {
-        console->executeCommand(line);
-    }
+    executeEditorCode(line);
 }
 
 void MainWindow::runSelection()
@@ -782,17 +723,7 @@ void MainWindow::runSelection()
     CodeEditor *editor = getCurrentEditor();
     if (!editor || !console) return;
     
-    QString selection = editor->textCursor().selectedText();
-    if (!selection.isEmpty()) {
-        // Qt uses Unicode paragraph separator, replace with newline
-        selection.replace(QChar(0x2029), '\n');
-        while (selection.endsWith('\n'))
-            selection.chop(1);
-        if (selection.contains('\n'))
-            console->executeRCode(selection);
-        else
-            console->executeCommand(selection);
-    }
+    executeEditorCode(editor->textCursor().selectedText());
 }
 
 void MainWindow::runAll()
@@ -822,6 +753,35 @@ void MainWindow::sourceFile()
     filePath.replace('\\', '/');
     QString command = QString("source('%1')").arg(filePath);
     console->executeCommand(command);
+}
+
+void MainWindow::setWorkingDirectory(const QString &path)
+{
+    m_currentDir = path;
+    fileBrowser->setRootPath(path);
+
+    if (console) {
+        QString rPath = path;
+        rPath.replace('\\', '/').replace('\'', "\\'");
+        console->executeCommand(QString("setwd('%1')").arg(rPath));
+    }
+}
+
+void MainWindow::executeEditorCode(QString code)
+{
+    if (!console) return;
+
+    code.replace(QChar(0x2029), '\n');
+    while (code.endsWith('\n'))
+        code.chop(1);
+
+    if (code.trimmed().isEmpty())
+        return;
+
+    if (code.contains('\n'))
+        console->executeRCode(code);
+    else
+        console->executeCommand(code);
 }
 
 void MainWindow::changeTheme()
