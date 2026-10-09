@@ -1,0 +1,2 @@
+PKG_CPPFLAGS = $(shell if pkg-config --exists cairo 2>/dev/null; then pkg-config --cflags cairo; else echo -DRGUI2_NO_CAIRO; fi)
+PKG_LIBS = $(shell if pkg-config --exists cairo 2>/dev/null; then pkg-config --libs cairo; fi)

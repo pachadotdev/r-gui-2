@@ -4,7 +4,7 @@ setwd('~/Documents/r-gui-2')
 x = 1
 y <- 1
 
-iris$
+iris$Sepal.Length
 
 tinyplot::tinyplot(Sepal.Length ~ Petal.Length | Species, data = iris)
 

@@ -72,10 +72,12 @@ MainWindow::MainWindow(QWidget *parent)
     fileBrowser = new FileBrowser(this);
 
     // ── Right: tabbed pane (Help / Environment / Plots) ──────────────────────
-    QString plotDir = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                          .filePath("rgui2_plots");
+    QString plotChannelFile = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                          .filePath("rgui2_plot_port");
+    QString plotSizeFile = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                          .filePath("rgui2_plot_size");
     envPane  = new EnvironmentPane(console, this);
-    plotPane = new PlotPane(plotDir, this);
+    plotPane = new PlotPane(plotChannelFile, plotSizeFile, this);
     helpPane = new HelpPane(console, this);
     m_rightTabs = new QTabWidget(this);
     m_rightTabs->addTab(envPane,   tr("Environment"));
@@ -86,6 +88,10 @@ MainWindow::MainWindow(QWidget *parent)
     // running plotting code always brings the result into view.
     connect(plotPane, &PlotPane::plotUpdated, this, [this]() {
         m_rightTabs->setCurrentWidget(plotPane);
+    });
+    connect(plotPane, &PlotPane::plotResizeRequested, this, [this]() {
+        if (console)
+            console->executeCommandSilent("rgui2::refresh_plot()");
     });
 
     // ── Outer horizontal splitter (left | center | right) ────────────────────

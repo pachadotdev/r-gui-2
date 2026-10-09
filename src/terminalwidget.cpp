@@ -110,7 +110,7 @@ private:
 // Writes the R profile init script and populates env list entries.
 
 static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
-                         const QString &plotDir)
+                         const QString &plotChannelFile, const QString &plotSizeFile)
 {
     QString pid      = QString::number(QCoreApplication::applicationPid());
     QString initPath = QDir::tempPath() + "/rgui2_init_" + pid + ".R";
@@ -137,7 +137,8 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "      url_file   = Sys.getenv('RGUI2_HELP_URL_FILE',   unset='/tmp/rgui2_help_url')\n"
         << "    ), error = function(e) NULL)\n"
         << "    tryCatch(rgui2::init_plot_capture(\n"
-        << "      Sys.getenv('RGUI2_PLOT_DIR', unset=file.path(tempdir(), 'rgui2_plots'))\n"
+        << "      Sys.getenv('RGUI2_PLOT_PORT_FILE', unset=file.path(tempdir(), 'rgui2_plot_port')),\n"
+        << "      Sys.getenv('RGUI2_PLOT_SIZE_FILE', unset=file.path(tempdir(), 'rgui2_plot_size'))\n"
         << "    ), error = function(e) NULL)\n"
         << "  }\n"
         << "})\n";
@@ -148,7 +149,8 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         env << "RGUI2_ORIGINAL_R_PROFILE_USER=" + origProf;
     env << "R_PROFILE_USER=" + initPath;
     env << "RGUI2_ENV_FILE=" + QDir::tempPath() + "/rgui2_env.json";
-    env << "RGUI2_PLOT_DIR=" + plotDir;
+    env << "RGUI2_PLOT_PORT_FILE=" + plotChannelFile;
+    env << "RGUI2_PLOT_SIZE_FILE=" + plotSizeFile;
     return initPath;
 }
 
@@ -228,8 +230,8 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
 
     // ── Build child environment ─────────────────────────────────────────────
     QProcessEnvironment sysEnv = QProcessEnvironment::systemEnvironment();
-    QString plotDir = QDir::tempPath() + "/rgui2_plots";
-    QDir().mkpath(plotDir);
+    QString plotChannelFile = QDir::tempPath() + "/rgui2_plot_port";
+    QString plotSizeFile = QDir::tempPath() + "/rgui2_plot_size";
 
 #ifdef Q_OS_WIN
     // On Windows the child inherits the parent's environment via CreateProcess.
@@ -244,13 +246,16 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
             (tmpDir + "/rgui2_help_queue").toStdWString().c_str());
         SetEnvironmentVariableW(L"RGUI2_HELP_URL_FILE",
             (tmpDir + "/rgui2_help_url").toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_PLOT_DIR", plotDir.toStdWString().c_str());
+        SetEnvironmentVariableW(L"RGUI2_PLOT_PORT_FILE",
+            plotChannelFile.toStdWString().c_str());
+        SetEnvironmentVariableW(L"RGUI2_PLOT_SIZE_FILE",
+            plotSizeFile.toStdWString().c_str());
     }
     {
         QString base = QFileInfo(shellPath).baseName().toLower();
         if (base == "r" || base == "rterm") {
             QStringList dummy;
-            QString initPath = setupREnv(dummy, sysEnv, plotDir);
+            QString initPath = setupREnv(dummy, sysEnv, plotChannelFile, plotSizeFile);
             if (!initPath.isEmpty()) {
                 QString orig = sysEnv.value("R_PROFILE_USER");
                 if (!orig.isEmpty())
@@ -272,7 +277,7 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
             << "TERM=xterm-256color";
 
     if (QFileInfo(shellPath).fileName().toLower() == "r")
-        setupREnv(envList, sysEnv, plotDir);
+        setupREnv(envList, sysEnv, plotChannelFile, plotSizeFile);
 #endif
 
     // ── Set up QWebChannel ──────────────────────────────────────────────────
