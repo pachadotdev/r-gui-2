@@ -595,6 +595,33 @@ QStringList CodeEditor::getBuiltinCPPCompletions() const
     return s_builtinCPP;
 }
 
+QStringList CodeEditor::getFileCompletions(const QString &pathPrefix) const
+{
+    QString directoryPath = pathPrefix;
+    const int separator = qMax(pathPrefix.lastIndexOf('/'), pathPrefix.lastIndexOf('\\'));
+    if (separator >= 0)
+        directoryPath = pathPrefix.left(separator + 1);
+    else
+        directoryPath = QStringLiteral(".");
+
+    if (directoryPath.startsWith('~')) {
+        directoryPath = QDir::homePath() + directoryPath.mid(1);
+    }
+
+    QDir directory(QDir::fromNativeSeparators(directoryPath));
+    if (!directory.exists())
+        return {};
+
+    QStringList completions;
+    const QFileInfoList entries = directory.entryInfoList(
+        QDir::AllEntries | QDir::NoDotAndDotDot,
+        QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo &entry : entries)
+        completions.append(entry.fileName());
+
+    return completions;
+}
+
 QSet<QString> CodeEditor::getLoadedPackages() const
 {
     QSet<QString> pkgs;
@@ -866,11 +893,20 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
             e->ignore();
             return;
         case Qt::Key_Escape:
-        case Qt::Key_Tab:
         case Qt::Key_Backtab:
         case Qt::Key_Space:
             m_completer->popup()->hide();
             break;
+        case Qt::Key_Tab: {
+            const QModelIndex index = m_completer->popup()->currentIndex();
+            if (index.isValid()) {
+                insertCompletion(index.data().toString());
+                m_completer->popup()->hide();
+                return;
+            }
+            m_completer->popup()->hide();
+            break;
+        }
         default:
             break;
         }
@@ -913,6 +949,7 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
     QString pkgScope;
     bool isPkgContext = false;
     bool isArgContext = false;
+    bool isFilePathContext = false;
     QString argFuncName;
 
     if (nsMatch.hasMatch()) {
@@ -921,7 +958,27 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
     } else if (pkgMatch.hasMatch()) {
         isPkgContext = true;
         completionPrefix = pkgMatch.captured(1);
-    } else if (m_currentLanguage == RSyntaxHighlighter::Language::R) {
+    } else {
+        // RStudio also completes filesystem entries inside quoted arguments,
+        // e.g. setwd('~/Docu'). Keep the completer prefix to the final path
+        // component so the surrounding expression is left untouched.
+        static const QRegularExpression pathRegex(
+            R"((?:^|[=(,]\s*)["']([^"']*)$)");
+        const QRegularExpressionMatch pathMatch = pathRegex.match(linePrefix);
+        if (pathMatch.hasMatch()) {
+            const QString pathPrefix = pathMatch.captured(1);
+            const int separator = qMax(pathPrefix.lastIndexOf('/'),
+                                       pathPrefix.lastIndexOf('\\'));
+            isFilePathContext = true;
+            completionPrefix = separator >= 0
+                ? pathPrefix.mid(separator + 1)
+                : pathPrefix;
+
+            m_completerModel->setStringList(getFileCompletions(pathPrefix));
+        }
+    }
+
+    if (!isFilePathContext && m_currentLanguage == RSyntaxHighlighter::Language::R) {
         FunctionCallContext ctx = getFunctionCallContext(textCursor());
         if (ctx.insideCall && ctx.isArgNameContext) {
             isArgContext = true;
@@ -931,20 +988,21 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         } else {
             completionPrefix = textUnderCursor();
         }
-    } else {
+    } else if (!isFilePathContext && m_currentLanguage != RSyntaxHighlighter::Language::R) {
         completionPrefix = textUnderCursor();
     }
 
     const bool isNsContext = !pkgScope.isEmpty() && !isArgContext;
 
     if (!isShortcut && (hasModifier || e->text().isEmpty()
-                        || (!isNsContext && !isArgContext && completionPrefix.length() < 1)
-                        || (eow.contains(e->text().right(1)) && !isPkgContext && !isNsContext && !isArgContext && e->text().right(1) != "." && e->text().right(1) != "_"))) {
+                        || (!isNsContext && !isArgContext && !isFilePathContext && completionPrefix.length() < 1)
+                        || (eow.contains(e->text().right(1)) && !isPkgContext && !isNsContext && !isArgContext && !isFilePathContext && e->text().right(1) != "." && e->text().right(1) != "_"))) {
         m_completer->popup()->hide();
         return;
     }
 
-    updateCompleterModel(isPkgContext, pkgScope, isArgContext, argFuncName);
+    if (!isFilePathContext)
+        updateCompleterModel(isPkgContext, pkgScope, isArgContext, argFuncName);
 
     if (completionPrefix != m_completer->completionPrefix()) {
         m_completer->setCompletionPrefix(completionPrefix);

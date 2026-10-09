@@ -76,6 +76,7 @@ private:
     QStringList getDocumentWords() const;
     QStringList getBuiltinRCompletions() const;
     QStringList getBuiltinCPPCompletions() const;
+    QStringList getFileCompletions(const QString &pathPrefix) const;
 
     QWidget *lineNumberArea;
     RSyntaxHighlighter *highlighter;

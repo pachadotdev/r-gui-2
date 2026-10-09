@@ -72,15 +72,26 @@ fi
 echo "Using qmake: ${QMAKE_EXECUTABLE}"
 
 if ! command -v R &> /dev/null; then
-    echo "WARNING: R not found. The application will not work without R installed."
+    echo "ERROR: R not found. R is required to build the helper package." >&2
+    exit 1
 fi
 
 echo "Installing jsonlite..."
 R -e "if (!require('jsonlite', quietly=TRUE)) install.packages('jsonlite', repos='https://cloud.r-project.org')"
 
-echo "Installing rgui R package..."
-R CMD build rgui2pkg
-R CMD INSTALL rgui2_0.2.0.tar.gz
+echo "Building rgui R package..."
+rm -f "${RG2SRC}"/rgui2_*.tar.gz
+R CMD build "${RG2SRC}/rgui2pkg"
+
+R_PACKAGE_TARBALL="$(find "${RG2SRC}" -maxdepth 1 -type f \
+    -name 'rgui2_*.tar.gz' -printf '%f\n' | sort -V | tail -n 1)"
+if [ -z "${R_PACKAGE_TARBALL}" ]; then
+    echo "ERROR: R CMD build did not create an rgui2 package archive." >&2
+    exit 1
+fi
+
+echo "Installing ${R_PACKAGE_TARBALL}..."
+R CMD INSTALL "${RG2SRC}/${R_PACKAGE_TARBALL}"
 
 echo "All dependencies found!"
 
