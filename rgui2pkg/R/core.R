@@ -63,7 +63,8 @@ get_env_info <- function() {
       objects = list(),
       types = list(),
       dim = list(),
-      len = list()
+      len = list(),
+      members = list()
     ))
   }
   
@@ -90,15 +91,34 @@ get_env_info <- function() {
   safe_size <- function(x) {
     tryCatch(as.numeric(object.size(x)), error = function(e) 0)
   }
-  
+
+  safe_members <- function(x) {
+    tryCatch({
+      nms <- names(x)
+      if (is.null(nms)) character() else unique(nms[nzchar(nms)])
+    }, error = function(e) character())
+  }
+
   sizes <- lapply(vals, safe_size)
   total_size <- sum(unlist(sizes))
-  
+  visible_names <- unique(unlist(lapply(search(), function(pos) {
+    tryCatch(ls(envir = as.environment(pos)), error = function(e) character())
+  })))
+  visible_vals <- lapply(visible_names, function(name) {
+    tryCatch(get(name, envir = .GlobalEnv, inherits = TRUE), error = function(e) NULL)
+  })
+  member_lists <- lapply(visible_vals, safe_members)
+  has_members <- lengths(member_lists) > 0L
+  member_lists <- member_lists[has_members]
+  member_names <- visible_names[has_members]
+  names(member_lists) <- member_names
+
   info <- list(
     objects = I(objs),
     types = lapply(vals, safe_class),
     dim = lapply(vals, safe_dim),
     len = lapply(vals, safe_len),
+    members = member_lists,
     size = sizes,
     total_size = total_size
   )

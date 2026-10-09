@@ -556,6 +556,35 @@ QStringList CodeEditor::getSessionVariables() const
     return varNames;
 }
 
+QStringList CodeEditor::getObjectMembers(const QString &objectName) const
+{
+    if (objectName.isEmpty())
+        return {};
+
+    const QString envFilePath = QDir(QStandardPaths::writableLocation(
+        QStandardPaths::TempLocation)).filePath("rgui2_env.json");
+    QFile file(envFilePath);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject())
+        return {};
+
+    const QJsonObject members = doc.object().value("members").toObject();
+    const QJsonValue value = members.value(objectName);
+    if (!value.isArray())
+        return {};
+
+    QStringList result;
+    for (const QJsonValue &member : value.toArray()) {
+        const QString name = member.toString();
+        if (!name.isEmpty())
+            result.append(name);
+    }
+    return result;
+}
+
 QStringList CodeEditor::getDocumentWords() const
 {
     QString text = toPlainText();
@@ -950,6 +979,7 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
     bool isPkgContext = false;
     bool isArgContext = false;
     bool isFilePathContext = false;
+    bool isObjectMemberContext = false;
     QString argFuncName;
 
     if (nsMatch.hasMatch()) {
@@ -959,13 +989,23 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         isPkgContext = true;
         completionPrefix = pkgMatch.captured(1);
     } else {
+        static const QRegularExpression memberRegex(
+            R"(([A-Za-z.][A-Za-z0-9_.]*)\$([A-Za-z0-9_.]*)$)");
+        const QRegularExpressionMatch memberMatch = memberRegex.match(linePrefix);
+        if (memberMatch.hasMatch()) {
+            isObjectMemberContext = true;
+            completionPrefix = memberMatch.captured(2);
+            m_completerModel->setStringList(
+                getObjectMembers(memberMatch.captured(1)));
+        }
+
         // RStudio also completes filesystem entries inside quoted arguments,
         // e.g. setwd('~/Docu'). Keep the completer prefix to the final path
         // component so the surrounding expression is left untouched.
         static const QRegularExpression pathRegex(
             R"((?:^|[=(,]\s*)["']([^"']*)$)");
         const QRegularExpressionMatch pathMatch = pathRegex.match(linePrefix);
-        if (pathMatch.hasMatch()) {
+        if (!isObjectMemberContext && pathMatch.hasMatch()) {
             const QString pathPrefix = pathMatch.captured(1);
             const int separator = qMax(pathPrefix.lastIndexOf('/'),
                                        pathPrefix.lastIndexOf('\\'));
@@ -978,7 +1018,8 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         }
     }
 
-    if (!isFilePathContext && m_currentLanguage == RSyntaxHighlighter::Language::R) {
+    if (!isFilePathContext && !isObjectMemberContext
+        && m_currentLanguage == RSyntaxHighlighter::Language::R) {
         FunctionCallContext ctx = getFunctionCallContext(textCursor());
         if (ctx.insideCall && ctx.isArgNameContext) {
             isArgContext = true;
@@ -988,20 +1029,25 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         } else {
             completionPrefix = textUnderCursor();
         }
-    } else if (!isFilePathContext && m_currentLanguage != RSyntaxHighlighter::Language::R) {
+    } else if (!isFilePathContext && !isObjectMemberContext
+               && m_currentLanguage != RSyntaxHighlighter::Language::R) {
         completionPrefix = textUnderCursor();
     }
 
     const bool isNsContext = !pkgScope.isEmpty() && !isArgContext;
 
     if (!isShortcut && (hasModifier || e->text().isEmpty()
-                        || (!isNsContext && !isArgContext && !isFilePathContext && completionPrefix.length() < 1)
-                        || (eow.contains(e->text().right(1)) && !isPkgContext && !isNsContext && !isArgContext && !isFilePathContext && e->text().right(1) != "." && e->text().right(1) != "_"))) {
+                        || (!isNsContext && !isArgContext && !isFilePathContext
+                            && !isObjectMemberContext && completionPrefix.length() < 1)
+                        || (eow.contains(e->text().right(1)) && !isPkgContext
+                            && !isNsContext && !isArgContext && !isFilePathContext
+                            && !isObjectMemberContext && e->text().right(1) != "."
+                            && e->text().right(1) != "_"))) {
         m_completer->popup()->hide();
         return;
     }
 
-    if (!isFilePathContext)
+    if (!isFilePathContext && !isObjectMemberContext)
         updateCompleterModel(isPkgContext, pkgScope, isArgContext, argFuncName);
 
     if (completionPrefix != m_completer->completionPrefix()) {
