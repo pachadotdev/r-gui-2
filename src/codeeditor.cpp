@@ -176,6 +176,23 @@ QStringList CodeEditor::getInstalledRPackages()
         }
     };
 
+    // Use R's resolved library paths so user-configured/versioned libraries
+    // are discovered even when the GUI was not launched with R_LIBS_* set.
+    QProcess rscript;
+    rscript.start(findRscriptBinary(), {
+        QStringLiteral("--vanilla"),
+        QStringLiteral("-e"),
+        QStringLiteral("writeLines(.libPaths())")
+    });
+    if (rscript.waitForFinished(3000) && rscript.exitStatus() == QProcess::NormalExit
+        && rscript.exitCode() == 0) {
+        const QStringList rLibraryPaths = QString::fromLocal8Bit(
+            rscript.readAllStandardOutput()).split(QRegularExpression(QStringLiteral("[\r\n]+")),
+                                                   Qt::SkipEmptyParts);
+        for (const QString &path : rLibraryPaths)
+            scanDir(path.trimmed());
+    }
+
     for (const char *envVar : {"R_LIBS_USER", "R_LIBS", "R_LIBS_SITE"}) {
         QString val = QString::fromLocal8Bit(qgetenv(envVar));
         if (!val.isEmpty()) {
@@ -725,7 +742,6 @@ void CodeEditor::updateCompleterModel(bool packageContextOnly, const QString &pk
                 items.insert(exportedSym);
             }
         }
-        for (const QString &pkg : getInstalledRPackages()) items.insert(pkg);
     }
 
     QStringList list = items.values();
@@ -1018,7 +1034,8 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         }
     }
 
-    if (!isFilePathContext && !isObjectMemberContext
+    if (!isPkgContext && !nsMatch.hasMatch()
+        && !isFilePathContext && !isObjectMemberContext
         && m_currentLanguage == RSyntaxHighlighter::Language::R) {
         FunctionCallContext ctx = getFunctionCallContext(textCursor());
         if (ctx.insideCall && ctx.isArgNameContext) {
