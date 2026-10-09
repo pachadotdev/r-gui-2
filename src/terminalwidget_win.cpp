@@ -706,20 +706,9 @@ void TerminalWidget::executeCommand(const QString &command)
 
 void TerminalWidget::executeCommandSilent(const QString &command)
 {
-    // Write to a temp file and source() with echo=FALSE (same trick as Unix build)
-    QString tmpPath = QDir::tempPath()
-        + QString("/rgui2_cmd_%1.R").arg(QCoreApplication::applicationPid());
-    QFile f(tmpPath);
-    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&f);
-        out << command << "\n";
-        f.close();
-        tmpPath.replace('\\', '/');
-        writeToPty(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
-                       .arg(tmpPath).toUtf8());
-    } else {
-        writeToPty((command + "\r").toUtf8());
-    }
+    // Send the command directly so silent execution never exposes an
+    // implementation detail such as a temporary source() wrapper.
+    writeToPty((command + "\r").toUtf8());
 }
 
 void TerminalWidget::executeRCode(const QString &code)

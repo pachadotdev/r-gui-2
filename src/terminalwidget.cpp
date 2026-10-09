@@ -624,7 +624,7 @@ void TerminalWidget::writeToPtySilent(const QByteArray &data)
     bool haveTio = (::tcgetattr(terminalFd, &tio) == 0);
     if (haveTio) {
         struct termios noecho = tio;
-        noecho.c_lflag &= ~static_cast<tcflag_t>(ECHO);
+        noecho.c_lflag &= ~static_cast<tcflag_t>(ECHO | ECHONL);
         ::tcsetattr(terminalFd, TCSANOW, &noecho);
     }
     ::write(ptyFd, data.constData(), static_cast<size_t>(data.size()));
@@ -634,7 +634,7 @@ void TerminalWidget::writeToPtySilent(const QByteArray &data)
         // leaks the injected source() command into the terminal. Keep it
         // disabled briefly while R consumes the line, then restore the user's
         // original terminal settings.
-        QTimer::singleShot(50, this, [this, terminalFd, tio]() {
+        QTimer::singleShot(250, this, [this, terminalFd, tio]() {
             if (ptySlaveFd >= 0)
                 ::tcsetattr(terminalFd, TCSANOW, &tio);
         });
@@ -712,22 +712,9 @@ void TerminalWidget::executeCommand(const QString &command)
 
 void TerminalWidget::executeCommandSilent(const QString &command)
 {
-    // Write to a temp file and source() with echo=FALSE so the command
-    // text itself is not echoed in the terminal (same trick on all platforms).
-    // Local ECHO is also suppressed for the wrapper line itself (POSIX only).
-    QString pid     = QString::number(QCoreApplication::applicationPid());
-    QString tmpPath = QDir::tempPath() + "/rgui2_cmd_" + pid + ".R";
-    QFile f(tmpPath);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        executeCommand(command);
-        return;
-    }
-    QTextStream out(&f);
-    out << command << "\n";
-    f.close();
-    tmpPath.replace('\\', '/');
-    writeToPtySilent(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
-                   .arg(tmpPath).toUtf8());
+    // Send the command directly so silent execution never exposes an
+    // implementation detail such as a temporary source() wrapper.
+    writeToPtySilent((command + "\r").toUtf8());
 }
 
 void TerminalWidget::executeRCode(const QString &code)
