@@ -32,15 +32,7 @@ CodeEditor::CodeEditor(QWidget *parent)
     // Get current theme
     currentTheme = ThemeManager::instance().currentTheme();
     
-    // Set font - try Hack first, fallback to monospace
-    QFont font;
-    QStringList fonts = {"Hack", "Noto Sans Mono", "Courier New", "Monospace"};
-    for (const QString &fontName : fonts) {
-        font = QFont(fontName, 12);
-        if (QFontInfo(font).family() == fontName) {
-            break;
-        }
-    }
+    QFont font(ThemeManager::instance().monospaceFont(), 12);
     font.setStyleHint(QFont::TypeWriter);
     setFont(font);
     

@@ -29,6 +29,7 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QApplication>
+#include <QFont>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -231,6 +232,10 @@ void MainWindow::createMenus()
     themeAct->setShortcut(Qt::CTRL | Qt::Key_T);
     connect(themeAct, &QAction::triggered, this, &MainWindow::changeTheme);
     viewMenu->addAction(themeAct);
+
+    QAction *fontAct = new QAction(tr("Change &Monospace Font..."), this);
+    connect(fontAct, &QAction::triggered, this, &MainWindow::changeMonospaceFont);
+    viewMenu->addAction(fontAct);
 
     viewMenu->addSeparator();
 
@@ -823,7 +828,7 @@ void MainWindow::changeTheme()
         themeList->setCurrentRow(currentIndex);
         themeList->scrollToItem(themeList->item(currentIndex));
     }
-    
+
     layout->addWidget(themeList);
     
     // Connect search box to filter themes
@@ -913,6 +918,51 @@ void MainWindow::changeTheme()
 
         qDebug() << "Theme applied successfully:" << selectedTheme;
     }
+}
+
+void MainWindow::changeMonospaceFont()
+{
+    ThemeManager &themeMgr = ThemeManager::instance();
+    const QStringList fonts = themeMgr.availableMonospaceFonts();
+    if (fonts.isEmpty()) {
+        QMessageBox::warning(this, tr("Font Error"),
+                             tr("No system monospace fonts were found."));
+        return;
+    }
+
+    bool ok = false;
+    const QString selected = QInputDialog::getItem(
+        this, tr("Select Monospace Font"), tr("Font family:"), fonts,
+        qMax(0, fonts.indexOf(themeMgr.monospaceFont())), false, &ok);
+    if (!ok || selected.isEmpty() || selected == themeMgr.monospaceFont())
+        return;
+
+    themeMgr.setMonospaceFont(selected);
+    applyMonospaceFont();
+}
+
+void MainWindow::applyMonospaceFont()
+{
+    ThemeManager &themeMgr = ThemeManager::instance();
+    const QString family = themeMgr.monospaceFont();
+    const EditorTheme theme = themeMgr.currentTheme();
+
+    for (int i = 0; i < editorTabs->count(); ++i) {
+        if (auto *editor = qobject_cast<CodeEditor*>(editorTabs->widget(i))) {
+            QFont font = editor->font();
+            font.setFamily(family);
+            editor->setFont(font);
+            editor->setStyleSheet(themeMgr.toStyleSheet(theme));
+            editor->setFontSize(m_globalFontSize);
+        }
+    }
+
+    for (int i = 0; i < consoleTabs->count(); ++i) {
+        if (auto *terminal = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
+            terminal->setFontFamily(family);
+    }
+
+    qApp->setStyleSheet(themeMgr.toStyleSheet(theme));
 }
 
 void MainWindow::adjustAllTerminalFontSize(int delta)

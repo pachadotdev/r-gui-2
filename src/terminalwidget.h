@@ -42,6 +42,7 @@ public:
     ~TerminalWidget();
 
     void setTheme(const EditorTheme &theme);
+    void setFontFamily(const QString &family);
     QString getShell() const { return shellPath; }
     void setArgs(const QStringList &args);
     void writeToShell(const QString &text);

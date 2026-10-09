@@ -40,7 +40,7 @@
 <div id="terminal"></div>
 <script>
 var term = new Terminal({
-  fontFamily: 'Hack, Hack Nerd Font Mono, Cascadia Code, Menlo, monospace',
+  fontFamily: 'Hack, monospace',
   fontSize: 16,  // 12pt default (pt × 96/72 = px)
   scrollback: 10000,
   cursorBlink: true
@@ -76,6 +76,12 @@ window.resetFontSize = function() {
 window.setFontSize = function(pt) {
   var newSize = Math.round(Math.max(6, Math.min(32, pt)) * 96 / 72);
   term.options.fontSize = newSize;
+  fitAddon.fit();
+  if (window._bridge)
+    window._bridge.resizePty(term.cols, term.rows);
+};
+window.setFontFamily = function(family) {
+  term.options.fontFamily = family + ', monospace';
   fitAddon.fit();
   if (window._bridge)
     window._bridge.resizePty(term.cols, term.rows);

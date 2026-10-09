@@ -302,6 +302,7 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
     connect(page(), &QWebEnginePage::loadFinished, this, [this](bool ok) {
         if (!ok) return;
         pageLoaded = true;
+        setFontFamily(ThemeManager::instance().monospaceFont());
         // Apply any font size requested before the page was ready.
         if (pendingFontSize > 0) {
             const int s = pendingFontSize;
@@ -669,6 +670,14 @@ void TerminalWidget::setTheme(const EditorTheme &theme)
     emit bridge->themeChanged(theme.background.name(),
                                theme.foreground.name(),
                                theme.foreground.name());
+}
+
+void TerminalWidget::setFontFamily(const QString &family)
+{
+    QString escaped = family;
+    escaped.replace('\\', "\\\\").replace('\'', "\\'");
+    page()->runJavaScript(QString(
+        "if (window.setFontFamily) window.setFontFamily('%1');").arg(escaped));
 }
 
 // ── Resize ────────────────────────────────────────────────────────────────────

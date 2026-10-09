@@ -34,6 +34,7 @@ private slots:
     void runAll();
     void sourceFile();
     void changeTheme();
+    void changeMonospaceFont();
     void about();
     void adjustAllTerminalFontSize(int delta);  // +1 / -1 / 0 = reset
 
@@ -80,6 +81,7 @@ private:
     void updateTabTitle(int index, bool modified);
     void setWorkingDirectory(const QString &path);
     void executeEditorCode(QString code);
+    void applyMonospaceFont();
 };
 
 #endif // MAINWINDOW_H
