@@ -174,5 +174,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ver="${{ inputs.version }}"
-          tag="v${ver%.*}"   # 0.3.0 -> v0.3.0
+          tag="v${ver}"
           gh release upload "${tag}" installer/R-GUI-2-*-Setup.exe --clobber
