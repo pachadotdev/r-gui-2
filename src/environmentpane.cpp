@@ -109,26 +109,33 @@ void EnvironmentPane::runGC()
 void EnvironmentPane::onEnvironmentFileChanged(const QString &path)
 {
     if (path != envFilePath) return;
-    
-    QFile file(path);
-    if (file.open(QIODevice::ReadOnly)) {
-        QByteArray data = file.readAll();
-        file.close();
-        if (data.isEmpty()) {
-             treeWidget->clear();
-             new QTreeWidgetItem(treeWidget, QStringList() << "Status" << "Environment empty" << "");
-        } else {
-             parseEnvironmentData(data);
+
+    // R may truncate the file before jsonlite finishes rewriting it. This is
+    // especially visible on Windows, where the watcher can report that
+    // intermediate empty file as the only change.
+    QTimer::singleShot(100, this, [this, path]() {
+        if (!QFileInfo::exists(path)) {
+            if (!fileWatcher->files().contains(path))
+                fileWatcher->addPath(path);
+            return;
         }
-    } else {
-        treeWidget->clear();
-        new QTreeWidgetItem(treeWidget, QStringList() << "Error" << "Cannot read file" << "");
-    }
-    
-    // Re-add path if watcher lost it (some editors delete/recreate files)
-    if (!fileWatcher->files().contains(path)) {
-        fileWatcher->addPath(path);
-    }
+
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) {
+            const QByteArray data = file.readAll();
+            file.close();
+            if (!data.trimmed().isEmpty()) {
+                const QJsonDocument doc = QJsonDocument::fromJson(data);
+                if (!doc.isNull())
+                    parseEnvironmentData(data);
+            }
+        }
+
+        // Re-add path if the writer replaced the file while updating it.
+        if (!fileWatcher->files().contains(path))
+            fileWatcher->addPath(path);
+    });
+
 }
 
 void EnvironmentPane::parseEnvironmentData(const QByteArray &jsonData)
