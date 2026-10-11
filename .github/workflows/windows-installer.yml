@@ -6,7 +6,7 @@ on:
       version:
         description: 'Version string (e.g. 1.2.3)'
         required: false
-        default: '0.2.0'
+        default: '0.3.0'
 
 jobs:
   build-windows:
@@ -162,5 +162,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ver="${{ inputs.version }}"
-          tag="v${ver%.*}"   # 0.2.0 -> v0.2
+          tag="v${ver%.*}"   # 0.3.0 -> v0.3.0
           gh release upload "${tag}" installer/R-GUI-2-*-Setup.exe --clobber

@@ -1,5 +1,5 @@
 pkgname=r-gui-2
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="R GUI 2 - Made with Qt"
 arch=('x86_64')
