@@ -94,15 +94,15 @@ jobs:
           Copy-Item -Recurse fonts        installer\staging\fonts
           Copy-Item -Recurse rgui2pkg     installer\staging\rgui2pkg
 
-      - name: Download rgui2 R package tarball
+      - name: Build rgui2 R package tarball
         shell: pwsh
         run: |
-          $ver   = "${{ inputs.version }}"
-          $parts = $ver -split '\.'
-          $tag   = "v$($parts[0]).$($parts[1]).$($parts[2])"
-          $url   = "https://github.com/pachadotdev/r-gui-2/releases/download/${tag}/rgui2_${ver}.tar.gz"
-          Write-Host "Downloading rgui2 package from ${url}"
-          Invoke-WebRequest -Uri $url -OutFile installer\staging\rgui2pkg.tar.gz
+          R CMD build rgui2pkg --no-manual
+          $tarball = Get-ChildItem rgui2_*.tar.gz | Select-Object -First 1
+          if (-not $tarball) {
+            Write-Error "R package tarball was not created"; exit 1
+          }
+          Copy-Item $tarball.FullName installer\staging\rgui2pkg.tar.gz
 
       - name: Pre-install R packages for bundling
         shell: pwsh

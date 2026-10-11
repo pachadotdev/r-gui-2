@@ -145,6 +145,74 @@ init_plot_capture <- function(port_file, size_file) {
       return(c(0L, 0L))
     pmax(size, c(320L, 240L))
   }
+
+  # Windows builds do not link Cairo into the package. Use R's file-backed
+  # PNG device there and forward each completed plot through the same protocol
+  # consumed by PlotPane.
+  if (.Platform$OS.type == "windows") {
+    png_path <- file.path(tempdir(), "rgui2_plot.png")
+
+    send_png <- function(path, size) {
+      port <- suppressWarnings(as.integer(readLines(port_file, n = 1L,
+                                                     warn = FALSE)))
+      if (!length(port) || is.na(port) || port <= 0L || !file.exists(path))
+        return(invisible(NULL))
+
+      con <- NULL
+      tryCatch({
+        con <- socketConnection("127.0.0.1", port = port, open = "wb",
+                                blocking = TRUE)
+        writeChar(sprintf("RGPN %d %d\n", size[[1L]], size[[2L]]),
+                  con, eos = NULL, useBytes = TRUE)
+        writeBin(readBin(path, "raw", n = file.info(path)$size), con)
+      }, error = function(e) NULL,
+      finally = if (!is.null(con)) close(con))
+      invisible(NULL)
+    }
+
+    capture_plot <- function() {
+      if (grDevices::dev.cur() == 1L)
+        return(invisible(NULL))
+      size <- requested_size()
+      if (any(size == 0L))
+        size <- c(672L, 480L)
+      recorded <- tryCatch(grDevices::recordPlot(), error = function(e) NULL)
+      if (!is.null(recorded)) {
+        grDevices::png(png_path, width = size[[1L]], height = size[[2L]],
+                       type = "windows")
+        grDevices::replayPlot(recorded)
+        grDevices::dev.off()
+        send_png(png_path, size)
+      }
+      invisible(NULL)
+    }
+
+    options(device = function(width = 7, height = 5, ...) {
+      size <- requested_size()
+      if (any(size == 0L))
+        size <- c(round(width * 96), round(height * 96))
+      grDevices::png(png_path, width = size[[1L]], height = size[[2L]],
+                     type = "windows", ...)
+    })
+    options(rgui2.plot_refresh = capture_plot)
+    cb_name <- "rgui2_plot_capture"
+    if (cb_name %in% getTaskCallbackNames())
+      removeTaskCallback(cb_name)
+    addTaskCallback(function(expr, value, ok, visible) {
+      tryCatch({
+        getOption("rgui2.plot_refresh")()
+      }, error = function(e) NULL)
+      TRUE
+    }, name = cb_name)
+
+    initial_size <- requested_size()
+    if (any(initial_size == 0L))
+      initial_size <- c(672L, 480L)
+    grDevices::png(png_path, width = initial_size[[1L]],
+                   height = initial_size[[2L]], type = "windows")
+    return(invisible(NULL))
+  }
+
   size <- requested_size()
   if (any(size == 0L))
     size <- c(672L, 480L)
