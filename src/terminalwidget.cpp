@@ -58,6 +58,68 @@ struct TerminalWidget::ConPtyImpl {
     int    cols = 80;
     int    rows = 24;
 };
+
+static QString findWindowsRterm(QString *rHomeOut = nullptr)
+{
+    auto accept = [rHomeOut](const QString &rHome) {
+        const QStringList candidates = {
+            QDir(rHome).filePath("bin/x64/Rterm.exe"),
+            QDir(rHome).filePath("bin/Rterm.exe")
+        };
+        for (const QString &candidate : candidates) {
+            if (QFileInfo::isFile(candidate)) {
+                if (rHomeOut) *rHomeOut = QDir::cleanPath(rHome);
+                return QDir::cleanPath(candidate);
+            }
+        }
+        return QString();
+    };
+
+    const QString envHome = QString::fromLocal8Bit(qgetenv("R_HOME"));
+    if (!envHome.isEmpty()) {
+        const QString found = accept(envHome);
+        if (!found.isEmpty()) return found;
+    }
+
+    QString found = QStandardPaths::findExecutable("Rterm.exe");
+    if (!found.isEmpty() && QFileInfo::isFile(found)) {
+        QDir binDir = QFileInfo(found).dir();
+        if (binDir.dirName().compare("x64", Qt::CaseInsensitive) == 0)
+            binDir.cdUp();
+        if (rHomeOut) *rHomeOut = binDir.filePath("..");
+        return QDir::cleanPath(found);
+    }
+
+    auto readRegistryHome = [](HKEY root, REGSAM view) {
+        HKEY key = nullptr;
+        const LONG openResult = RegOpenKeyExW(
+            root, L"SOFTWARE\\R-core\\R64", 0, KEY_READ | view, &key);
+        if (openResult != ERROR_SUCCESS) return QString();
+
+        wchar_t value[1024] = {};
+        DWORD type = 0;
+        DWORD size = sizeof(value);
+        QString result;
+        if (RegQueryValueExW(key, L"InstallPath", nullptr, &type,
+                             reinterpret_cast<LPBYTE>(value), &size) == ERROR_SUCCESS &&
+            (type == REG_SZ || type == REG_EXPAND_SZ)) {
+            result = QString::fromWCharArray(value);
+        }
+        RegCloseKey(key);
+        return result;
+    };
+
+    for (const REGSAM view : {KEY_WOW64_64KEY, KEY_WOW64_32KEY}) {
+        for (const HKEY root : {HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER}) {
+            const QString home = readRegistryHome(root, view);
+            if (!home.isEmpty()) {
+                found = accept(home);
+                if (!found.isEmpty()) return found;
+            }
+        }
+    }
+    return {};
+}
 #endif
 
 // ── PtyReaderThread ───────────────────────────────────────────────────────────
@@ -120,7 +182,7 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         return {};
 
     QTextStream out(&f);
-    out << "local({\n"
+    out << "invisible(local({\n"
         << "  orig_prof <- Sys.getenv('RGUI2_ORIGINAL_R_PROFILE_USER')\n"
         << "  if (nzchar(orig_prof) && file.exists(orig_prof)) {\n"
         << "    source(orig_prof)\n"
@@ -142,7 +204,7 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "      Sys.getenv('RGUI2_PLOT_SIZE_FILE', unset=file.path(tempdir(), 'rgui2_plot_size'))\n"
         << "    ), error = function(e) NULL)\n"
         << "  }\n"
-        << "})\n";
+        << "}))\n";
     f.close();
 
     QString origProf = sysEnv.value("R_PROFILE_USER");
@@ -197,12 +259,8 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
     if (!shell.isEmpty() && shell != "R" && shell != "r") {
         shellPath = shell;
     } else if (shell == "R" || shell == "r") {
-        QString rHome = QString::fromLocal8Bit(qgetenv("R_HOME"));
-        QString rterm;
-        if (!rHome.isEmpty())
-            rterm = rHome + "/bin/x64/Rterm.exe";
-        if (rterm.isEmpty() || !QFileInfo::exists(rterm))
-            rterm = QStandardPaths::findExecutable("Rterm");
+        QString rHome;
+        QString rterm = findWindowsRterm(&rHome);
         if (rterm.isEmpty() || !QFileInfo::exists(rterm)) {
             QProcess probe;
             probe.start("R", {"--slave", "-e", "cat(R.home('bin'))"});
@@ -212,7 +270,15 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
                 rterm = binDir + "/Rterm.exe";
             }
         }
-        shellPath = QFileInfo::exists(rterm) ? rterm : "Rterm.exe";
+        shellPath = QFileInfo::exists(rterm) ? rterm : QString();
+        if (!rHome.isEmpty()) {
+            SetEnvironmentVariableW(L"R_HOME", rHome.toStdWString().c_str());
+            const QString rBin = QFileInfo(rterm).absolutePath();
+            const QString path = QString::fromLocal8Bit(qgetenv("PATH"));
+            if (!path.split(';', Qt::SkipEmptyParts).contains(rBin, Qt::CaseInsensitive))
+                SetEnvironmentVariableW(L"PATH",
+                    (rBin + ";" + path).toStdWString().c_str());
+        }
     } else {
         QString pwsh = QStandardPaths::findExecutable("pwsh");
         shellPath = pwsh.isEmpty() ? QStandardPaths::findExecutable("powershell") : pwsh;
@@ -449,12 +515,28 @@ void TerminalWidget::startPty()
     std::wstring wCmd = cmd.toStdWString();
 
     PROCESS_INFORMATION pi{};
-    CreateProcessW(nullptr, wCmd.data(), nullptr, nullptr, FALSE,
-                   EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-                   nullptr, nullptr, &si.StartupInfo, &pi);
+    const BOOL launched = CreateProcessW(
+        nullptr, wCmd.data(), nullptr, nullptr, FALSE,
+        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+        nullptr, nullptr, &si.StartupInfo, &pi);
 
     DeleteProcThreadAttributeList(attrList);
     HeapFree(GetProcessHeap(), 0, attrList);
+
+    if (!launched) {
+        const DWORD error = GetLastError();
+        pty->hProcess = INVALID_HANDLE_VALUE;
+        pty->hThread = INVALID_HANDLE_VALUE;
+        insertPlainText(QString("Unable to start R. Rterm.exe was not found or could not be launched "
+                                "(Windows error %1).\r\n").arg(error));
+        CloseHandle(pty->hPtyIn);
+        CloseHandle(pty->hPtyOut);
+        ClosePseudoConsole(pty->hPCon);
+        pty->hPtyIn = INVALID_HANDLE_VALUE;
+        pty->hPtyOut = INVALID_HANDLE_VALUE;
+        pty->hPCon = nullptr;
+        return;
+    }
 
     pty->hProcess = pi.hProcess;
     pty->hThread  = pi.hThread;
