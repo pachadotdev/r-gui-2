@@ -630,11 +630,9 @@ void TerminalWidget::writeToPtySilent(const QByteArray &data)
     }
     ::write(ptyFd, data.constData(), static_cast<size_t>(data.size()));
     if (haveTio) {
-        // The PTY can echo the queued bytes after write() returns. Restoring
-        // ECHO synchronously therefore races with the line discipline and
-        // leaks the injected source() command into the terminal. Keep it
-        // disabled briefly while R consumes the line, then restore the user's
-        // original terminal settings.
+        // The line discipline may echo the bytes after write() returns.
+        // Keep echo disabled long enough for R to consume the line, then
+        // restore it so immediately following user input remains visible.
         QTimer::singleShot(250, this, [this, terminalFd, tio]() {
             if (ptySlaveFd >= 0)
                 ::tcsetattr(terminalFd, TCSANOW, &tio);
@@ -680,7 +678,6 @@ void TerminalWidget::sendOutput(const QByteArray &data)
     if (output.isEmpty())
         return;
 
-    // Base64-encode for safe transport through QWebChannel's JSON serialisation.
     emit bridge->outputReady(QString::fromLatin1(output.toUtf8().toBase64()));
 }
 
@@ -747,8 +744,8 @@ void TerminalWidget::executeCommand(const QString &command)
 
 void TerminalWidget::executeCommandSilent(const QString &command)
 {
-    // Source with echo disabled so internal refreshes do not appear as user
-    // commands in the console.
+    if (command.isEmpty())
+        return;
     QString pid     = QString::number(QCoreApplication::applicationPid());
     QString tmpPath = QDir::tempPath() + "/rgui2_cmd_" + pid + ".R";
     QFile f(tmpPath);
@@ -777,8 +774,6 @@ void TerminalWidget::executeCommandSilent(const QString &command)
 
 void TerminalWidget::executeRCode(const QString &code)
 {
-    // Feed the selection directly to R's readline/parse loop. This preserves
-    // native prompts, blank lines, continuation prompts, and printed results.
     writeToPty((code + "\r").toUtf8());
 }
 

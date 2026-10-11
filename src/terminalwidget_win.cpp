@@ -706,30 +706,12 @@ void TerminalWidget::executeCommand(const QString &command)
 
 void TerminalWidget::executeCommandSilent(const QString &command)
 {
-    QString tmpPath = QDir::tempPath()
-        + QString("/rgui2_cmd_%1.R").arg(QCoreApplication::applicationPid());
-    QFile f(tmpPath);
-    if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        const QByteArray marker = QByteArray("__RGGUI_INTERNAL_DONE_")
-            + QByteArray::number(QCoreApplication::applicationPid()) + "__";
-        QTextStream out(&f);
-        out << command << "\n"
-            << "cat('" << QString::fromLatin1(marker) << "\\n')\n";
-        f.close();
-        tmpPath.replace('\\', '/');
-        internalOutputMarker = marker;
-        internalOutputBuffer.clear();
-        suppressInternalOutput = true;
-        QTimer::singleShot(2000, this, [this]() {
-            suppressInternalOutput = false;
-            suppressInternalPrompt = false;
-            internalOutputBuffer.clear();
-        });
-        writeToPty(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
-                       .arg(tmpPath).toUtf8());
-    } else {
-        writeToPty((command + "\r").toUtf8());
-    }
+    if (command.isEmpty())
+        return;
+    const QByteArray input =
+        QStringLiteral("invisible(local({%1}))").arg(command).toUtf8();
+    hiddenCommandEcho = input;
+    writeToPty(input + '\r');
 }
 
 void TerminalWidget::executeRCode(const QString &code)

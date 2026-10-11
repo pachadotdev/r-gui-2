@@ -22,6 +22,7 @@ public:
     ~PlotPane();
 
     QString plotChannelFile() const { return m_plotChannelFile; }
+    bool hasPlot() const { return !m_currentPixmap.isNull(); }
 
 public slots:
     void refresh();

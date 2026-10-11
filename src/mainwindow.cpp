@@ -89,11 +89,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(plotPane, &PlotPane::plotUpdated, this, [this]() {
         m_rightTabs->setCurrentWidget(plotPane);
     });
-    connect(plotPane, &PlotPane::plotResizeRequested, this, [this]() {
-        if (console)
-            console->executeCommandSilent("rgui2::refresh_plot()");
-    });
-
     // ── Outer horizontal splitter (left | center | right) ────────────────────
     m_outerSplitter = new QSplitter(Qt::Horizontal, this);
     m_outerSplitter->addWidget(fileBrowser);
