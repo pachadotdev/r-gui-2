@@ -97,7 +97,7 @@ jobs:
       - name: Build rgui2 R package tarball
         shell: pwsh
         run: |
-          R CMD build rgui2pkg --no-manual
+          R.exe CMD build rgui2pkg --no-manual
           $tarball = Get-ChildItem rgui2_*.tar.gz | Select-Object -First 1
           if (-not $tarball) {
             Write-Error "R package tarball was not created"; exit 1
