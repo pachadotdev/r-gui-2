@@ -117,7 +117,9 @@ void PlotPane::readPlotData()
     const int width = fields[1].toInt();
     const int height = fields[2].toInt();
     if (fields[0] == "RGPN") {
-        const qsizetype payloadSize = static_cast<qsizetype>(height);
+        // PNG frames carry their byte length in the second header field;
+        // unlike raw RGPL frames, their image dimensions are encoded in PNG.
+        const qsizetype payloadSize = static_cast<qsizetype>(width);
         if (payloadSize <= 0 || m_pendingData.size() < headerEnd + 1 + payloadSize)
             return;
         const QByteArray payload = m_pendingData.mid(headerEnd + 1, payloadSize);

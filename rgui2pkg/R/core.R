@@ -146,28 +146,40 @@ init_plot_capture <- function(port_file, size_file) {
     pmax(size, c(320L, 240L))
   }
 
-  # Windows builds do not link Cairo into the package. Use R's file-backed
-  # PNG device there and forward each completed plot through the same protocol
-  # consumed by PlotPane.
+  # Windows uses the CRAN Cairo package for the file-backed device. This
+  # avoids the interactive windows device, which opens an external window.
   if (.Platform$OS.type == "windows") {
     png_path <- file.path(tempdir(), "rgui2_plot.png")
+    open_png <- function(path, size, ...) {
+      if (!requireNamespace("Cairo", quietly = TRUE))
+        stop("The Cairo R package is required for Windows plot capture")
+      Cairo::CairoPNG(filename = path, width = size[[1L]], height = size[[2L]],
+                      units = "px", dpi = 96, ...)
+    }
 
     send_png <- function(path, size) {
       port <- suppressWarnings(as.integer(readLines(port_file, n = 1L,
                                                      warn = FALSE)))
-      if (!length(port) || is.na(port) || port <= 0L || !file.exists(path))
+      file_size <- if (file.exists(path)) file.info(path)$size else NA_real_
+      if (!length(port) || is.na(port) || port <= 0L || is.na(file_size)
+          || file_size <= 0)
         return(invisible(NULL))
 
       con <- NULL
       tryCatch({
         con <- socketConnection("127.0.0.1", port = port, open = "wb",
                                 blocking = TRUE)
-        writeChar(sprintf("RGPN %d %d\n", size[[1L]], size[[2L]]),
-                  con, eos = NULL, useBytes = TRUE)
-        writeBin(readBin(path, "raw", n = file.info(path)$size), con)
-      }, error = function(e) NULL,
+        writeBin(charToRaw(sprintf("RGPN %d 0\n", as.double(file_size))), con)
+        writeBin(readBin(path, "raw", n = file_size), con)
+      }, error = function(e) {
+        message("rgui2 plot transfer failed: ", conditionMessage(e))
+      },
       finally = if (!is.null(con)) close(con))
       invisible(NULL)
+    }
+
+    reopen_png <- function(size) {
+      open_png(png_path, size)
     }
 
     capture_plot <- function() {
@@ -177,13 +189,14 @@ init_plot_capture <- function(port_file, size_file) {
       if (any(size == 0L))
         size <- c(672L, 480L)
       recorded <- tryCatch(grDevices::recordPlot(), error = function(e) NULL)
+      grDevices::dev.off()
       if (!is.null(recorded)) {
-        grDevices::png(png_path, width = size[[1L]], height = size[[2L]],
-                       type = "windows")
+        reopen_png(size)
         grDevices::replayPlot(recorded)
         grDevices::dev.off()
-        send_png(png_path, size)
       }
+      send_png(png_path, size)
+      reopen_png(size)
       invisible(NULL)
     }
 
@@ -191,8 +204,7 @@ init_plot_capture <- function(port_file, size_file) {
       size <- requested_size()
       if (any(size == 0L))
         size <- c(round(width * 96), round(height * 96))
-      grDevices::png(png_path, width = size[[1L]], height = size[[2L]],
-                     type = "windows", ...)
+      open_png(png_path, size, ...)
     })
     options(rgui2.plot_refresh = capture_plot)
     cb_name <- "rgui2_plot_capture"
@@ -208,8 +220,7 @@ init_plot_capture <- function(port_file, size_file) {
     initial_size <- requested_size()
     if (any(initial_size == 0L))
       initial_size <- c(672L, 480L)
-    grDevices::png(png_path, width = initial_size[[1L]],
-                   height = initial_size[[2L]], type = "windows")
+    open_png(png_path, initial_size)
     return(invisible(NULL))
   }
 

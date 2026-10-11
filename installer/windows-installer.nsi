@@ -185,7 +185,7 @@ Section "rgui2 R package (requires existing R installation)" SecRPkg
       "No existing R installation was found. Please install R from https://cran.r-project.org, then re-run this installer to copy the bundled R packages."
   ${Else}
     DetailPrint "Found R installation at $0"
-    DetailPrint "Copying R packages..."
+    DetailPrint "Copying R packages and Cairo graphics support..."
     SetOutPath "$0\library"
     File /r "staging\R-library\*"
   ${EndIf}

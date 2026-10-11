@@ -129,6 +129,11 @@ jobs:
           & $rscript --vanilla -e "install.packages('jsonlite', lib='$rLibraryR', repos='https://cloud.r-project.org', type='win.binary')"
           if ($LASTEXITCODE -ne 0) { Write-Error "jsonlite install failed"; exit 1 }
 
+          # Cairo provides the non-interactive PNG device used by rgui2 on Windows.
+          Write-Host "Installing Cairo..."
+          & $rscript --vanilla -e "install.packages('Cairo', lib='$rLibraryR', repos='https://cloud.r-project.org', type='win.binary')"
+          if ($LASTEXITCODE -ne 0) { Write-Error "Cairo install failed"; exit 1 }
+
           # Install rgui2 from source into the same staging library.
           Write-Host "Installing rgui2..."
           $tarball = (Join-Path $PWD "installer\staging\rgui2pkg.tar.gz") -replace '\\', '/'
@@ -137,7 +142,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Error "rgui2 install failed"; exit 1 }
 
           # Verify both package trees before NSIS packages them.
-          foreach ($pkg in @("jsonlite", "rgui2")) {
+          foreach ($pkg in @("jsonlite", "Cairo", "rgui2")) {
             $src = Join-Path $rLibrary $pkg
             if (Test-Path $src) {
               Write-Host "Staged: $pkg"

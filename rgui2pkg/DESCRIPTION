@@ -8,7 +8,7 @@ License: Apache License 2.0
 Encoding: UTF-8
 LazyData: true
 Imports: jsonlite
-Suggests: later
+Suggests: later, Cairo
 NeedsCompilation: yes
 SystemRequirements: Cairo (Linux; optional on other platforms)
 Config/roxygen2/version: 8.1.0
