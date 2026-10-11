@@ -9,11 +9,11 @@ init_plot_capture(port_file, size_file)
 
 \arguments{
 \item{port_file}{File containing the localhost TCP port used by the Q IDE.}
+
 \item{size_file}{File containing the requested plot width and height in pixels.}
 }
 
 \description{
-Installs the compiled native graphics device and sends its raw RGB framebuffer
-over a localhost connection to the Q IDE. On Linux the device uses Cairo for
-shape and text rendering.
+Installs the compiled Cairo-backed graphics device used by the Q IDE.
 }
+
