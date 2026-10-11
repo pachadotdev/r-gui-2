@@ -87,7 +87,11 @@ MainWindow::MainWindow(QWidget *parent)
     // Auto-switch to the Plots tab whenever a new/updated plot arrives, so
     // running plotting code always brings the result into view.
     connect(plotPane, &PlotPane::plotUpdated, this, [this]() {
-        m_rightTabs->setCurrentWidget(plotPane);
+        // Do not steal focus from the Environment pane while a command such
+        // as `x <- 1` refreshes the R session. Plot-producing commands still
+        // switch to Plots when another right-hand pane is active.
+        if (m_rightTabs->currentWidget() != envPane)
+            m_rightTabs->setCurrentWidget(plotPane);
     });
     // ── Outer horizontal splitter (left | center | right) ────────────────────
     m_outerSplitter = new QSplitter(Qt::Horizontal, this);

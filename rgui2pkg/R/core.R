@@ -156,6 +156,7 @@ init_plot_capture <- function(port_file, size_file) {
       Cairo::CairoPNG(filename = path, width = size[[1L]], height = size[[2L]],
                       units = "px", dpi = 96, ...)
     }
+    last_plot_signature <- NULL
 
     send_png <- function(path, size) {
       port <- suppressWarnings(as.integer(readLines(port_file, n = 1L,
@@ -189,6 +190,10 @@ init_plot_capture <- function(port_file, size_file) {
       if (any(size == 0L))
         size <- c(672L, 480L)
       recorded <- tryCatch(grDevices::recordPlot(), error = function(e) NULL)
+      signature <- if (is.null(recorded)) NULL else serialize(recorded, NULL)
+      if (identical(signature, last_plot_signature))
+        return(invisible(NULL))
+      last_plot_signature <<- signature
       grDevices::dev.off()
       if (!is.null(recorded)) {
         reopen_png(size)
