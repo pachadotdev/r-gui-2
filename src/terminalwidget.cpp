@@ -531,13 +531,14 @@ void TerminalWidget::startPty()
         const QString message = QString("Unable to start R. Rterm.exe was not found or could not be "
                                         "launched (Windows error %1).").arg(error);
         qWarning().noquote() << message;
+        QString escapedMessage = message;
+        escapedMessage.replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\r", "")
+            .replace("\n", "\\n");
         page()->runJavaScript(QString(
             "if(window.term){term.write('\\r\\n\\x1b[31m%1\\x1b[0m\\r\\n');}"
-        ).arg(message
-              .replace("\\", "\\\\")
-              .replace("'", "\\'")
-              .replace("\r", "")
-              .replace("\n", "\\n")));
+        ).arg(escapedMessage));
         CloseHandle(pty->hPtyIn);
         CloseHandle(pty->hPtyOut);
         ClosePseudoConsole(pty->hPCon);
