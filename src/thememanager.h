@@ -42,6 +42,9 @@ public:
     static ThemeManager& instance();
     
     QStringList availableThemes() const;
+    QStringList availableMonospaceFonts() const;
+    QString monospaceFont() const;
+    void setMonospaceFont(const QString &family);
     EditorTheme getTheme(const QString &name) const;
     EditorTheme currentTheme() const;
     void setCurrentTheme(const QString &name);
@@ -61,6 +64,7 @@ private:
     QStringList jsonThemeNames;
     QString themesDir;
     QString currentThemeName;
+    QString monospaceFontName = QStringLiteral("Hack");
 };
 
 #endif // THEMEMANAGER_H

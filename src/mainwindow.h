@@ -34,6 +34,7 @@ private slots:
     void runAll();
     void sourceFile();
     void changeTheme();
+    void changeMonospaceFont();
     void about();
     void adjustAllTerminalFontSize(int delta);  // +1 / -1 / 0 = reset
 
@@ -71,7 +72,6 @@ private:
     QMenu *helpMenu = nullptr;
     QAction *toggleSuggestionsAct = nullptr;
 
-    QString currentFile;
     int     m_globalFontSize = 12;  // shared font size for editors + terminals
     bool    m_suggestionsEnabled = true;
     QString m_currentDir;           // last directory opened via Open Directory
@@ -79,6 +79,9 @@ private:
     CodeEditor *getCurrentEditor();
     void addNewEditorTab(const QString &title = "Untitled");
     void updateTabTitle(int index, bool modified);
+    void setWorkingDirectory(const QString &path);
+    void executeEditorCode(QString code);
+    void applyMonospaceFont();
 };
 
 #endif // MAINWINDOW_H

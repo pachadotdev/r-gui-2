@@ -127,12 +127,58 @@ SectionEnd
 ; ===============================================================================
 Section "rgui2 R package (requires existing R installation)" SecRPkg
 
-  ; Detect an existing R installation via the registry (set by the official
-  ; R-core installer). We do not bundle/install R itself anymore.
+  ; Detect R in both registry views. The official installer writes the R64
+  ; key, but its view depends on the installer architecture and Windows
+  ; registry redirection settings.
+  SetRegView 64
   ReadRegStr $0 HKLM "SOFTWARE\R-core\R64" "InstallPath"
   ${If} $0 == ""
     ReadRegStr $0 HKCU "SOFTWARE\R-core\R64" "InstallPath"
   ${EndIf}
+  ${If} $0 == ""
+    ReadRegStr $1 HKLM "SOFTWARE\R-core\R64" "Current Version"
+    ${If} $1 != ""
+      ReadRegStr $0 HKLM "SOFTWARE\R-core\R64\$1" "InstallPath"
+    ${EndIf}
+  ${EndIf}
+  ${If} $0 == ""
+    ReadRegStr $1 HKCU "SOFTWARE\R-core\R64" "Current Version"
+    ${If} $1 != ""
+      ReadRegStr $0 HKCU "SOFTWARE\R-core\R64\$1" "InstallPath"
+    ${EndIf}
+  ${EndIf}
+  ${If} $0 == ""
+    ReadRegStr $0 HKLM "SOFTWARE\R-core\R" "InstallPath"
+  ${EndIf}
+  ${If} $0 == ""
+    ReadRegStr $0 HKCU "SOFTWARE\R-core\R" "InstallPath"
+  ${EndIf}
+  ${If} $0 == ""
+    SetRegView 32
+    ReadRegStr $0 HKLM "SOFTWARE\R-core\R64" "InstallPath"
+    ${If} $0 == ""
+      ReadRegStr $0 HKCU "SOFTWARE\R-core\R64" "InstallPath"
+    ${EndIf}
+    ${If} $0 == ""
+      ReadRegStr $1 HKLM "SOFTWARE\R-core\R64" "Current Version"
+      ${If} $1 != ""
+        ReadRegStr $0 HKLM "SOFTWARE\R-core\R64\$1" "InstallPath"
+      ${EndIf}
+    ${EndIf}
+    ${If} $0 == ""
+      ReadRegStr $1 HKCU "SOFTWARE\R-core\R64" "Current Version"
+      ${If} $1 != ""
+        ReadRegStr $0 HKCU "SOFTWARE\R-core\R64\$1" "InstallPath"
+      ${EndIf}
+    ${EndIf}
+    ${If} $0 == ""
+      ReadRegStr $0 HKLM "SOFTWARE\R-core\R" "InstallPath"
+    ${EndIf}
+    ${If} $0 == ""
+      ReadRegStr $0 HKCU "SOFTWARE\R-core\R" "InstallPath"
+    ${EndIf}
+  ${EndIf}
+  SetRegView lastused
 
   ${If} $0 == ""
     MessageBox MB_ICONEXCLAMATION|MB_OK \

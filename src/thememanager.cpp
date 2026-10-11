@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QSettings>
+#include <QFontDatabase>
 
 ThemeManager& ThemeManager::instance()
 {
@@ -27,6 +28,14 @@ ThemeManager::ThemeManager()
     // Load saved theme from settings
     QSettings settings("RGUI2", "RGUI2");
     QString savedTheme = settings.value("theme").toString();
+    QString savedFont = settings.value("monospaceFont").toString();
+    if (!savedFont.isEmpty() && availableMonospaceFonts().contains(savedFont))
+        monospaceFontName = savedFont;
+    if (!availableMonospaceFonts().contains(monospaceFontName)) {
+        const QStringList fonts = availableMonospaceFonts();
+        if (!fonts.isEmpty())
+            monospaceFontName = fonts.first();
+    }
     
     if (!savedTheme.isEmpty() && jsonThemeNames.contains(savedTheme)) {
         currentThemeName = savedTheme;
@@ -96,6 +105,33 @@ QStringList ThemeManager::availableThemes() const
     return allThemes;
 }
 
+QStringList ThemeManager::availableMonospaceFonts() const
+{
+    QStringList fonts;
+    for (const QString &family : QFontDatabase::families()) {
+        if (QFontDatabase::isFixedPitch(family))
+            fonts.append(family);
+    }
+
+    fonts.sort(Qt::CaseInsensitive);
+    return fonts;
+}
+
+QString ThemeManager::monospaceFont() const
+{
+    return monospaceFontName;
+}
+
+void ThemeManager::setMonospaceFont(const QString &family)
+{
+    if (!availableMonospaceFonts().contains(family))
+        return;
+
+    monospaceFontName = family;
+    QSettings settings("RGUI2", "RGUI2");
+    settings.setValue("monospaceFont", family);
+}
+
 EditorTheme ThemeManager::getTheme(const QString &name) const
 {
     // Check if it's already cached
@@ -155,6 +191,8 @@ QString ThemeManager::toStyleSheet(const EditorTheme &theme) const
 {
     // Create a comprehensive stylesheet for the entire application
     QString stylesheet;
+    QString cssFontFamily = monospaceFontName;
+    cssFontFamily.replace('\'', "\\'");
     
     // Main application colors
     stylesheet += QString(
@@ -170,7 +208,7 @@ QString ThemeManager::toStyleSheet(const EditorTheme &theme) const
         "   background-color: %1;"
         "   color: %2;"
         "   selection-background-color: %3;"
-        "   font-family: 'Hack', 'Courier New', monospace;"
+        "   font-family: '%6', monospace;"
         "}"
         "QMenuBar {"
         "   background-color: %1;"
@@ -283,7 +321,8 @@ QString ThemeManager::toStyleSheet(const EditorTheme &theme) const
      .arg(theme.foreground.name())
      .arg(theme.selection.name())
      .arg(theme.lineNumber.name())
-     .arg(theme.lineHighlight.name());
+     .arg(theme.lineHighlight.name())
+     .arg(cssFontFamily);
     
     return stylesheet;
 }

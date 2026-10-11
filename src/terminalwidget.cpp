@@ -13,6 +13,7 @@
 #include <QFontMetrics>
 #include <QMenu>
 #include <QProcessEnvironment>
+#include <QRegularExpression>
 #include <QResizeEvent>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -110,7 +111,7 @@ private:
 // Writes the R profile init script and populates env list entries.
 
 static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
-                         const QString &plotDir)
+                         const QString &plotChannelFile, const QString &plotSizeFile)
 {
     QString pid      = QString::number(QCoreApplication::applicationPid());
     QString initPath = QDir::tempPath() + "/rgui2_init_" + pid + ".R";
@@ -137,7 +138,8 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "      url_file   = Sys.getenv('RGUI2_HELP_URL_FILE',   unset='/tmp/rgui2_help_url')\n"
         << "    ), error = function(e) NULL)\n"
         << "    tryCatch(rgui2::init_plot_capture(\n"
-        << "      Sys.getenv('RGUI2_PLOT_DIR', unset=file.path(tempdir(), 'rgui2_plots'))\n"
+        << "      Sys.getenv('RGUI2_PLOT_PORT_FILE', unset=file.path(tempdir(), 'rgui2_plot_port')),\n"
+        << "      Sys.getenv('RGUI2_PLOT_SIZE_FILE', unset=file.path(tempdir(), 'rgui2_plot_size'))\n"
         << "    ), error = function(e) NULL)\n"
         << "  }\n"
         << "})\n";
@@ -148,7 +150,8 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         env << "RGUI2_ORIGINAL_R_PROFILE_USER=" + origProf;
     env << "R_PROFILE_USER=" + initPath;
     env << "RGUI2_ENV_FILE=" + QDir::tempPath() + "/rgui2_env.json";
-    env << "RGUI2_PLOT_DIR=" + plotDir;
+    env << "RGUI2_PLOT_PORT_FILE=" + plotChannelFile;
+    env << "RGUI2_PLOT_SIZE_FILE=" + plotSizeFile;
     return initPath;
 }
 
@@ -228,8 +231,8 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
 
     // ── Build child environment ─────────────────────────────────────────────
     QProcessEnvironment sysEnv = QProcessEnvironment::systemEnvironment();
-    QString plotDir = QDir::tempPath() + "/rgui2_plots";
-    QDir().mkpath(plotDir);
+    QString plotChannelFile = QDir::tempPath() + "/rgui2_plot_port";
+    QString plotSizeFile = QDir::tempPath() + "/rgui2_plot_size";
 
 #ifdef Q_OS_WIN
     // On Windows the child inherits the parent's environment via CreateProcess.
@@ -244,13 +247,16 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
             (tmpDir + "/rgui2_help_queue").toStdWString().c_str());
         SetEnvironmentVariableW(L"RGUI2_HELP_URL_FILE",
             (tmpDir + "/rgui2_help_url").toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_PLOT_DIR", plotDir.toStdWString().c_str());
+        SetEnvironmentVariableW(L"RGUI2_PLOT_PORT_FILE",
+            plotChannelFile.toStdWString().c_str());
+        SetEnvironmentVariableW(L"RGUI2_PLOT_SIZE_FILE",
+            plotSizeFile.toStdWString().c_str());
     }
     {
         QString base = QFileInfo(shellPath).baseName().toLower();
         if (base == "r" || base == "rterm") {
             QStringList dummy;
-            QString initPath = setupREnv(dummy, sysEnv, plotDir);
+            QString initPath = setupREnv(dummy, sysEnv, plotChannelFile, plotSizeFile);
             if (!initPath.isEmpty()) {
                 QString orig = sysEnv.value("R_PROFILE_USER");
                 if (!orig.isEmpty())
@@ -272,7 +278,7 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
             << "TERM=xterm-256color";
 
     if (QFileInfo(shellPath).fileName().toLower() == "r")
-        setupREnv(envList, sysEnv, plotDir);
+        setupREnv(envList, sysEnv, plotChannelFile, plotSizeFile);
 #endif
 
     // ── Set up QWebChannel ──────────────────────────────────────────────────
@@ -302,6 +308,7 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
     connect(page(), &QWebEnginePage::loadFinished, this, [this](bool ok) {
         if (!ok) return;
         pageLoaded = true;
+        setFontFamily(ThemeManager::instance().monospaceFont());
         // Apply any font size requested before the page was ready.
         if (pendingFontSize > 0) {
             const int s = pendingFontSize;
@@ -618,17 +625,15 @@ void TerminalWidget::writeToPtySilent(const QByteArray &data)
     bool haveTio = (::tcgetattr(terminalFd, &tio) == 0);
     if (haveTio) {
         struct termios noecho = tio;
-        noecho.c_lflag &= ~static_cast<tcflag_t>(ECHO);
+        noecho.c_lflag &= ~static_cast<tcflag_t>(ECHO | ECHONL);
         ::tcsetattr(terminalFd, TCSANOW, &noecho);
     }
     ::write(ptyFd, data.constData(), static_cast<size_t>(data.size()));
     if (haveTio) {
-        // The PTY can echo the queued bytes after write() returns. Restoring
-        // ECHO synchronously therefore races with the line discipline and
-        // leaks the injected source() command into the terminal. Keep it
-        // disabled briefly while R consumes the line, then restore the user's
-        // original terminal settings.
-        QTimer::singleShot(50, this, [this, terminalFd, tio]() {
+        // The line discipline may echo the bytes after write() returns.
+        // Keep echo disabled long enough for R to consume the line, then
+        // restore it so immediately following user input remains visible.
+        QTimer::singleShot(250, this, [this, terminalFd, tio]() {
             if (ptySlaveFd >= 0)
                 ::tcsetattr(terminalFd, TCSANOW, &tio);
         });
@@ -639,8 +644,41 @@ void TerminalWidget::writeToPtySilent(const QByteArray &data)
 // Called on the main thread via Qt::QueuedConnection from PtyReaderThread.
 void TerminalWidget::sendOutput(const QByteArray &data)
 {
-    // Base64-encode for safe transport through QWebChannel's JSON serialisation.
-    emit bridge->outputReady(QString::fromLatin1(data.toBase64()));
+    QByteArray visibleData = data;
+    if (suppressInternalOutput) {
+        internalOutputBuffer.append(data);
+        const qsizetype markerIndex = internalOutputBuffer.indexOf(internalOutputMarker);
+        if (markerIndex < 0)
+            return;
+        visibleData = internalOutputBuffer.mid(
+            markerIndex + internalOutputMarker.size());
+        suppressInternalOutput = false;
+        suppressInternalPrompt = true;
+        internalOutputBuffer.clear();
+    }
+
+    if (suppressInternalPrompt) {
+        internalOutputBuffer.append(visibleData);
+        const QString pending = QString::fromUtf8(internalOutputBuffer);
+        static const QRegularExpression internalPrompt(
+            QStringLiteral(R"(^(?:\r?\n)*\s*(?:>\s*)+)"));
+        const QRegularExpressionMatch match = internalPrompt.match(pending);
+        if (!match.hasMatch())
+            return;
+        const qsizetype consumed = match.capturedLength();
+        visibleData = internalOutputBuffer.mid(consumed);
+        internalOutputBuffer.clear();
+        suppressInternalPrompt = false;
+    }
+
+    QString output = QString::fromUtf8(visibleData);
+    static const QRegularExpression internalSource(
+        QStringLiteral(R"(>?\s*source\('/tmp/rgui2_cmd_[0-9]+\.R', echo=FALSE, print\.eval=FALSE, local=FALSE\))"));
+    output.replace(internalSource, QString());
+    if (output.isEmpty())
+        return;
+
+    emit bridge->outputReady(QString::fromLatin1(output.toUtf8().toBase64()));
 }
 
 void TerminalWidget::doResize(int cols, int rows)
@@ -671,6 +709,14 @@ void TerminalWidget::setTheme(const EditorTheme &theme)
                                theme.foreground.name());
 }
 
+void TerminalWidget::setFontFamily(const QString &family)
+{
+    QString escaped = family;
+    escaped.replace('\\', "\\\\").replace('\'', "\\'");
+    page()->runJavaScript(QString(
+        "if (window.setFontFamily) window.setFontFamily('%1');").arg(escaped));
+}
+
 // ── Resize ────────────────────────────────────────────────────────────────────
 
 void TerminalWidget::resizeEvent(QResizeEvent *event)
@@ -698,28 +744,36 @@ void TerminalWidget::executeCommand(const QString &command)
 
 void TerminalWidget::executeCommandSilent(const QString &command)
 {
-    // Write to a temp file and source() with echo=FALSE so the command
-    // text itself is not echoed in the terminal (same trick on all platforms).
-    // Local ECHO is also suppressed for the wrapper line itself (POSIX only).
+    if (command.isEmpty())
+        return;
     QString pid     = QString::number(QCoreApplication::applicationPid());
     QString tmpPath = QDir::tempPath() + "/rgui2_cmd_" + pid + ".R";
     QFile f(tmpPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        executeCommand(command);
+        writeToPtySilent((command + "\r").toUtf8());
         return;
     }
+    const QByteArray marker = QByteArray("__RGGUI_INTERNAL_DONE_")
+        + QByteArray::number(QCoreApplication::applicationPid()) + "__";
     QTextStream out(&f);
-    out << command << "\n";
+    out << command << "\n"
+        << "cat('" << QString::fromLatin1(marker) << "\\n')\n";
     f.close();
     tmpPath.replace('\\', '/');
+    internalOutputMarker = marker;
+    internalOutputBuffer.clear();
+    suppressInternalOutput = true;
+    QTimer::singleShot(2000, this, [this]() {
+        suppressInternalOutput = false;
+        suppressInternalPrompt = false;
+        internalOutputBuffer.clear();
+    });
     writeToPtySilent(QString("source('%1', echo=FALSE, print.eval=FALSE, local=FALSE)\r")
                    .arg(tmpPath).toUtf8());
 }
 
 void TerminalWidget::executeRCode(const QString &code)
 {
-    // Feed the selection directly to R's readline/parse loop. This preserves
-    // native prompts, blank lines, continuation prompts, and printed results.
     writeToPty((code + "\r").toUtf8());
 }
 

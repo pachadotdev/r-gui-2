@@ -74,8 +74,7 @@ EnvironmentPane::~EnvironmentPane()
 void EnvironmentPane::refreshEnvironment()
 {
     if (!terminal) return;
-    // terminal->executeCommand("if (requireNamespace('rgui2', quietly=TRUE)) rgui2::update_env()");
-    terminal->executeCommand("rgui2::update_env()");
+    terminal->executeCommandSilent("rgui2::update_env()");
 }
 
 void EnvironmentPane::deleteCheckedItems()
@@ -92,19 +91,19 @@ void EnvironmentPane::deleteCheckedItems()
 
     if (vars.isEmpty()) return;
 
-    terminal->executeCommand(QString("rm(%1)").arg(vars.join(", ")));
+    terminal->executeCommandSilent(QString("rm(%1)").arg(vars.join(", ")));
 }
 
 void EnvironmentPane::clearAllItems()
 {
     if (!terminal) return;
-    terminal->executeCommand("rm(list=ls())");
+    terminal->executeCommandSilent("rm(list=ls())");
 }
 
 void EnvironmentPane::runGC()
 {
     if (!terminal) return;
-    terminal->executeCommand("gc()");
+    terminal->executeCommandSilent("gc()");
 }
 
 void EnvironmentPane::onEnvironmentFileChanged(const QString &path)

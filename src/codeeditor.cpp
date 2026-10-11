@@ -32,15 +32,7 @@ CodeEditor::CodeEditor(QWidget *parent)
     // Get current theme
     currentTheme = ThemeManager::instance().currentTheme();
     
-    // Set font - try Hack first, fallback to monospace
-    QFont font;
-    QStringList fonts = {"Hack", "Noto Sans Mono", "Courier New", "Monospace"};
-    for (const QString &fontName : fonts) {
-        font = QFont(fontName, 12);
-        if (QFontInfo(font).family() == fontName) {
-            break;
-        }
-    }
+    QFont font(ThemeManager::instance().monospaceFont(), 12);
     font.setStyleHint(QFont::TypeWriter);
     setFont(font);
     
@@ -183,6 +175,23 @@ QStringList CodeEditor::getInstalledRPackages()
             }
         }
     };
+
+    // Use R's resolved library paths so user-configured/versioned libraries
+    // are discovered even when the GUI was not launched with R_LIBS_* set.
+    QProcess rscript;
+    rscript.start(findRscriptBinary(), {
+        QStringLiteral("--vanilla"),
+        QStringLiteral("-e"),
+        QStringLiteral("writeLines(.libPaths())")
+    });
+    if (rscript.waitForFinished(3000) && rscript.exitStatus() == QProcess::NormalExit
+        && rscript.exitCode() == 0) {
+        const QStringList rLibraryPaths = QString::fromLocal8Bit(
+            rscript.readAllStandardOutput()).split(QRegularExpression(QStringLiteral("[\r\n]+")),
+                                                   Qt::SkipEmptyParts);
+        for (const QString &path : rLibraryPaths)
+            scanDir(path.trimmed());
+    }
 
     for (const char *envVar : {"R_LIBS_USER", "R_LIBS", "R_LIBS_SITE"}) {
         QString val = QString::fromLocal8Bit(qgetenv(envVar));
@@ -564,6 +573,35 @@ QStringList CodeEditor::getSessionVariables() const
     return varNames;
 }
 
+QStringList CodeEditor::getObjectMembers(const QString &objectName) const
+{
+    if (objectName.isEmpty())
+        return {};
+
+    const QString envFilePath = QDir(QStandardPaths::writableLocation(
+        QStandardPaths::TempLocation)).filePath("rgui2_env.json");
+    QFile file(envFilePath);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject())
+        return {};
+
+    const QJsonObject members = doc.object().value("members").toObject();
+    const QJsonValue value = members.value(objectName);
+    if (!value.isArray())
+        return {};
+
+    QStringList result;
+    for (const QJsonValue &member : value.toArray()) {
+        const QString name = member.toString();
+        if (!name.isEmpty())
+            result.append(name);
+    }
+    return result;
+}
+
 QStringList CodeEditor::getDocumentWords() const
 {
     QString text = toPlainText();
@@ -601,6 +639,33 @@ QStringList CodeEditor::getBuiltinCPPCompletions() const
         "cout", "cin", "cerr", "endl", "include", "define", "ifdef", "ifndef", "endif"
     };
     return s_builtinCPP;
+}
+
+QStringList CodeEditor::getFileCompletions(const QString &pathPrefix) const
+{
+    QString directoryPath = pathPrefix;
+    const int separator = qMax(pathPrefix.lastIndexOf('/'), pathPrefix.lastIndexOf('\\'));
+    if (separator >= 0)
+        directoryPath = pathPrefix.left(separator + 1);
+    else
+        directoryPath = QStringLiteral(".");
+
+    if (directoryPath.startsWith('~')) {
+        directoryPath = QDir::homePath() + directoryPath.mid(1);
+    }
+
+    QDir directory(QDir::fromNativeSeparators(directoryPath));
+    if (!directory.exists())
+        return {};
+
+    QStringList completions;
+    const QFileInfoList entries = directory.entryInfoList(
+        QDir::AllEntries | QDir::NoDotAndDotDot,
+        QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo &entry : entries)
+        completions.append(entry.fileName());
+
+    return completions;
 }
 
 QSet<QString> CodeEditor::getLoadedPackages() const
@@ -677,7 +742,6 @@ void CodeEditor::updateCompleterModel(bool packageContextOnly, const QString &pk
                 items.insert(exportedSym);
             }
         }
-        for (const QString &pkg : getInstalledRPackages()) items.insert(pkg);
     }
 
     QStringList list = items.values();
@@ -874,11 +938,20 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
             e->ignore();
             return;
         case Qt::Key_Escape:
-        case Qt::Key_Tab:
         case Qt::Key_Backtab:
         case Qt::Key_Space:
             m_completer->popup()->hide();
             break;
+        case Qt::Key_Tab: {
+            const QModelIndex index = m_completer->popup()->currentIndex();
+            if (index.isValid()) {
+                insertCompletion(index.data().toString());
+                m_completer->popup()->hide();
+                return;
+            }
+            m_completer->popup()->hide();
+            break;
+        }
         default:
             break;
         }
@@ -921,6 +994,8 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
     QString pkgScope;
     bool isPkgContext = false;
     bool isArgContext = false;
+    bool isFilePathContext = false;
+    bool isObjectMemberContext = false;
     QString argFuncName;
 
     if (nsMatch.hasMatch()) {
@@ -929,7 +1004,39 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
     } else if (pkgMatch.hasMatch()) {
         isPkgContext = true;
         completionPrefix = pkgMatch.captured(1);
-    } else if (m_currentLanguage == RSyntaxHighlighter::Language::R) {
+    } else {
+        static const QRegularExpression memberRegex(
+            R"(([A-Za-z.][A-Za-z0-9_.]*)\$([A-Za-z0-9_.]*)$)");
+        const QRegularExpressionMatch memberMatch = memberRegex.match(linePrefix);
+        if (memberMatch.hasMatch()) {
+            isObjectMemberContext = true;
+            completionPrefix = memberMatch.captured(2);
+            m_completerModel->setStringList(
+                getObjectMembers(memberMatch.captured(1)));
+        }
+
+        // RStudio also completes filesystem entries inside quoted arguments,
+        // e.g. setwd('~/Docu'). Keep the completer prefix to the final path
+        // component so the surrounding expression is left untouched.
+        static const QRegularExpression pathRegex(
+            R"((?:^|[=(,]\s*)["']([^"']*)$)");
+        const QRegularExpressionMatch pathMatch = pathRegex.match(linePrefix);
+        if (!isObjectMemberContext && pathMatch.hasMatch()) {
+            const QString pathPrefix = pathMatch.captured(1);
+            const int separator = qMax(pathPrefix.lastIndexOf('/'),
+                                       pathPrefix.lastIndexOf('\\'));
+            isFilePathContext = true;
+            completionPrefix = separator >= 0
+                ? pathPrefix.mid(separator + 1)
+                : pathPrefix;
+
+            m_completerModel->setStringList(getFileCompletions(pathPrefix));
+        }
+    }
+
+    if (!isPkgContext && !nsMatch.hasMatch()
+        && !isFilePathContext && !isObjectMemberContext
+        && m_currentLanguage == RSyntaxHighlighter::Language::R) {
         FunctionCallContext ctx = getFunctionCallContext(textCursor());
         if (ctx.insideCall && ctx.isArgNameContext) {
             isArgContext = true;
@@ -939,20 +1046,26 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         } else {
             completionPrefix = textUnderCursor();
         }
-    } else {
+    } else if (!isFilePathContext && !isObjectMemberContext
+               && m_currentLanguage != RSyntaxHighlighter::Language::R) {
         completionPrefix = textUnderCursor();
     }
 
     const bool isNsContext = !pkgScope.isEmpty() && !isArgContext;
 
     if (!isShortcut && (hasModifier || e->text().isEmpty()
-                        || (!isNsContext && !isArgContext && completionPrefix.length() < 1)
-                        || (eow.contains(e->text().right(1)) && !isPkgContext && !isNsContext && !isArgContext && e->text().right(1) != "." && e->text().right(1) != "_"))) {
+                        || (!isNsContext && !isArgContext && !isFilePathContext
+                            && !isObjectMemberContext && completionPrefix.length() < 1)
+                        || (eow.contains(e->text().right(1)) && !isPkgContext
+                            && !isNsContext && !isArgContext && !isFilePathContext
+                            && !isObjectMemberContext && e->text().right(1) != "."
+                            && e->text().right(1) != "_"))) {
         m_completer->popup()->hide();
         return;
     }
 
-    updateCompleterModel(isPkgContext, pkgScope, isArgContext, argFuncName);
+    if (!isFilePathContext && !isObjectMemberContext)
+        updateCompleterModel(isPkgContext, pkgScope, isArgContext, argFuncName);
 
     if (completionPrefix != m_completer->completionPrefix()) {
         m_completer->setCompletionPrefix(completionPrefix);

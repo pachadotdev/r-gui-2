@@ -6,7 +6,7 @@ on:
       version:
         description: 'Version string (e.g. 1.2.3)'
         required: false
-        default: '0.2.0'
+        default: '0.3.0'
 
 jobs:
   build-windows:
@@ -108,26 +108,38 @@ jobs:
         shell: pwsh
         run: |
           # Use whatever R is already installed on the runner image (no fixed version).
-          $rHome = & Rscript -e "cat(R.home())"
+          $rscript = (Get-Command Rscript.exe -ErrorAction SilentlyContinue).Source
+          if (-not $rscript) {
+            $rscript = (Get-Command Rscript -ErrorAction SilentlyContinue).Source
+          }
+          if (-not $rscript) {
+            Write-Error "Rscript was not found on PATH"; exit 1
+          }
+          $rHome = (& $rscript --vanilla -e "cat(R.home())").Trim()
           Write-Host "Using R installation at: $rHome"
+
+          # Install into the package tree that will be bundled. This avoids
+          # R choosing a per-user library that is not under R.home().
+          $rLibrary = (Join-Path $PWD "installer\staging\R-library").Replace('\', '/')
+          New-Item -ItemType Directory -Force $rLibrary | Out-Null
+          $rLibraryR = $rLibrary.Replace("'", "\'")
 
           # Install jsonlite as a pre-built Windows binary (no compilation needed)
           Write-Host "Installing jsonlite..."
-          & Rscript -e "install.packages('jsonlite', repos='https://cloud.r-project.org', type='win.binary')"
+          & $rscript --vanilla -e "install.packages('jsonlite', lib='$rLibraryR', repos='https://cloud.r-project.org', type='win.binary')"
           if ($LASTEXITCODE -ne 0) { Write-Error "jsonlite install failed"; exit 1 }
 
-          # Install rgui2 from source (pure R package — no compiler required)
+          # Install rgui2 from source into the same staging library.
           Write-Host "Installing rgui2..."
           $tarball = (Join-Path $PWD "installer\staging\rgui2pkg.tar.gz") -replace '\\', '/'
-          & Rscript -e "install.packages('$tarball', repos=NULL, type='source')"
+          $tarballR = $tarball.Replace("'", "\'")
+          & $rscript --vanilla -e "install.packages('$tarballR', lib='$rLibraryR', repos=NULL, type='source')"
           if ($LASTEXITCODE -ne 0) { Write-Error "rgui2 install failed"; exit 1 }
 
-          # Stage the installed package trees for NSIS to bundle
-          New-Item -ItemType Directory -Force installer\staging\R-library | Out-Null
+          # Verify both package trees before NSIS packages them.
           foreach ($pkg in @("jsonlite", "rgui2")) {
-            $src = Join-Path $rHome "library\$pkg"
+            $src = Join-Path $rLibrary $pkg
             if (Test-Path $src) {
-              Copy-Item -Recurse $src installer\staging\R-library\
               Write-Host "Staged: $pkg"
             } else {
               Write-Error "Package not found after install: $pkg"; exit 1
@@ -162,5 +174,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ver="${{ inputs.version }}"
-          tag="v${ver%.*}"   # 0.2.0 -> v0.2
+          tag="v${ver%.*}"   # 0.3.0 -> v0.3.0
           gh release upload "${tag}" installer/R-GUI-2-*-Setup.exe --clobber

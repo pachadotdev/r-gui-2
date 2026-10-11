@@ -36,7 +36,7 @@ Educational purposes: When it is more complete, I will use it in my lectures/tut
 
 ## Installers
 
-I provided an installer for Windows. You can download it [here](https://github.com/pachadotdev/r-gui-2/releases/download/v0.2/R-GUI-2-0.2.0-Setup.exe).
+I provided an installer for Windows. You can download it [here](https://github.com/pachadotdev/r-gui-2/releases/download/v0.3.0/R-GUI-2-0.3.0-Setup.exe).
 
 ## Build and test
 

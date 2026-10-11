@@ -1,17 +1,19 @@
 #include "plotpane.h"
 
-#include <QFileInfo>
 #include <QDir>
 #include <QFile>
-#include <QTextStream>
 #include <QResizeEvent>
 #include <QSizePolicy>
 #include <QScrollBar>
+#include <QImage>
+#include <QHostAddress>
 
-PlotPane::PlotPane(const QString &plotDir, QWidget *parent)
+PlotPane::PlotPane(const QString &plotChannelFile, const QString &plotSizeFile,
+                   QWidget *parent)
     : QWidget(parent)
-    , m_plotDir(plotDir)
-    , m_currentFile(QDir(plotDir).filePath("rgui2_current.png"))
+    , m_plotChannelFile(plotChannelFile)
+    , m_plotSizeFile(plotSizeFile)
+    , m_server(new QTcpServer(this))
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -60,42 +62,96 @@ PlotPane::PlotPane(const QString &plotDir, QWidget *parent)
     m_scrollArea->setWidgetResizable(true);
     layout->addWidget(m_scrollArea);
 
-    // ── File system watcher ──────────────────────────────────────────────────
-    // Watch a single fixed-name file (rgui2_current.png). It doesn't exist
-    // until the first plot is drawn, so also watch the containing directory
-    // to catch its creation, then switch to watching the file itself.
-    QDir().mkpath(plotDir);
+    connect(m_server, &QTcpServer::newConnection,
+            this, &PlotPane::onPlotConnection);
+    if (!m_server->listen(QHostAddress::LocalHost, 0))
+        return;
 
-    m_watcher = new QFileSystemWatcher(this);
-    m_watcher->addPath(plotDir);
-    if (QFile::exists(m_currentFile))
-        m_watcher->addPath(m_currentFile);
-
-    m_reloadTimer = new QTimer(this);
-    m_reloadTimer->setSingleShot(true);
-    m_reloadTimer->setInterval(150);
-
-    connect(m_watcher,     &QFileSystemWatcher::fileChanged,
-            this, &PlotPane::onFileChanged);
-    connect(m_watcher,     &QFileSystemWatcher::directoryChanged,
-            this, &PlotPane::onFileChanged);
-    connect(m_reloadTimer, &QTimer::timeout, this, &PlotPane::refresh);
+    QFile channelFile(m_plotChannelFile);
+    if (channelFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        channelFile.write(QByteArray::number(m_server->serverPort()));
+        channelFile.close();
+    }
+    writePlotSize();
+    m_resizeTimer = new QTimer(this);
+    m_resizeTimer->setSingleShot(true);
+    m_resizeTimer->setInterval(150);
+    connect(m_resizeTimer, &QTimer::timeout,
+            this, &PlotPane::plotResizeRequested);
 
     connect(m_zoomInBtn,  &QPushButton::clicked, this, &PlotPane::zoomIn);
     connect(m_zoomOutBtn, &QPushButton::clicked, this, &PlotPane::zoomOut);
     connect(m_zoomFitBtn, &QPushButton::clicked, this, &PlotPane::zoomFit);
+
+    // The first size is written before the pane has completed its layout.
+    // Refresh once the viewport has its real dimensions so the initial plot
+    // uses the available space rather than the construction-time size.
+    QTimer::singleShot(250, this, [this]() {
+        writePlotSize();
+    });
+    QTimer::singleShot(750, this, [this]() {
+        writePlotSize();
+    });
 }
 
 PlotPane::~PlotPane() = default;
 
 // ── Private helpers ──────────────────────────────────────────────────────────
 
-void PlotPane::loadPlot(const QString &filePath)
+void PlotPane::readPlotData()
 {
-    if (filePath.isEmpty()) return;
+    if (!m_socket)
+        return;
 
-    QPixmap px(filePath);
-    if (px.isNull()) return;
+    m_pendingData.append(m_socket->readAll());
+    constexpr int headerSize = 32;
+    const int headerEnd = m_pendingData.indexOf('\n');
+    if (headerEnd < 0 || headerEnd > headerSize)
+        return;
+
+    const QList<QByteArray> fields = m_pendingData.left(headerEnd).split(' ');
+    if (fields.size() != 3 || (fields[0] != "RGPL" && fields[0] != "RGPN")) {
+        m_pendingData.clear();
+        return;
+    }
+    const int width = fields[1].toInt();
+    const int height = fields[2].toInt();
+    if (fields[0] == "RGPN") {
+        const qsizetype payloadSize = static_cast<qsizetype>(height);
+        if (payloadSize <= 0 || m_pendingData.size() < headerEnd + 1 + payloadSize)
+            return;
+        const QByteArray payload = m_pendingData.mid(headerEnd + 1, payloadSize);
+        m_pendingData.remove(0, headerEnd + 1 + payloadSize);
+        QPixmap px;
+        if (!px.loadFromData(payload, "PNG"))
+            return;
+        m_currentPixmap = px;
+        m_scrollArea->setWidgetResizable(false);
+        if (!m_userZoomed) {
+            zoomFit();
+            scheduleFit();
+        } else {
+            applyZoom();
+        }
+        scheduleInitialRefresh();
+        emit plotUpdated();
+        return;
+    }
+    const qsizetype payloadSize = static_cast<qsizetype>(width) * height * 3;
+    if (width <= 0 || height <= 0 || payloadSize <= 0
+        || m_pendingData.size() < headerEnd + 1 + payloadSize)
+        return;
+
+    const QByteArray payload = m_pendingData.mid(headerEnd + 1, payloadSize);
+    m_pendingData.remove(0, headerEnd + 1 + payloadSize);
+    // The native device sends tightly packed RGB rows.  Pass the row stride
+    // explicitly: letting QImage infer it may add alignment padding, which
+    // shears images whose width is not divisible by four.
+    QImage image(reinterpret_cast<const uchar *>(payload.constData()), width, height,
+                 width * 3, QImage::Format_RGB888);
+    QPixmap px = QPixmap::fromImage(image.copy());
+    if (px.isNull())
+        return;
 
     m_currentPixmap = px;
     // Once a real plot is showing, let the label keep its own explicit
@@ -111,7 +167,27 @@ void PlotPane::loadPlot(const QString &filePath)
     else
         applyZoom();
 
+    scheduleInitialRefresh();
     emit plotUpdated();
+}
+
+void PlotPane::writePlotSize()
+{
+    if (m_plotSizeFile.isEmpty())
+        return;
+
+    const QSize viewportSize = m_scrollArea->viewport()->size();
+    if (viewportSize.width() <= 0 || viewportSize.height() <= 0)
+        return;
+    const QSize size(qMax(320, viewportSize.width()), qMax(240, viewportSize.height()));
+
+    QFile sizeFile(m_plotSizeFile);
+    if (sizeFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        sizeFile.write(QByteArray::number(size.width()));
+        sizeFile.write(" ");
+        sizeFile.write(QByteArray::number(size.height()));
+        sizeFile.write("\n");
+    }
 }
 
 void PlotPane::applyZoom()
@@ -119,8 +195,10 @@ void PlotPane::applyZoom()
     if (m_currentPixmap.isNull()) return;
 
     QSize scaledSize = m_currentPixmap.size() * m_zoomFactor;
-    m_imageLabel->setPixmap(
-        m_currentPixmap.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    m_imageLabel->setPixmap(scaledSize == m_currentPixmap.size()
+        ? m_currentPixmap
+        : m_currentPixmap.scaled(scaledSize, Qt::KeepAspectRatio,
+                                 Qt::SmoothTransformation));
     m_imageLabel->resize(scaledSize);
 }
 
@@ -137,23 +215,36 @@ void PlotPane::scheduleFit()
     });
 }
 
+void PlotPane::scheduleInitialRefresh()
+{
+    if (m_initialRefreshScheduled)
+        return;
+
+    m_initialRefreshScheduled = true;
+    QTimer::singleShot(0, this, [this]() {
+        writePlotSize();
+        emit plotResizeRequested();
+    });
+}
+
 // ── Slots ─────────────────────────────────────────────────────────────────────
 
-void PlotPane::onFileChanged(const QString & /*path*/)
+void PlotPane::onPlotConnection()
 {
-    // grDevices::png() re-opening the file can drop it from the watch list
-    // (some platforms report the change as a remove+create); re-add it.
-    if (QFile::exists(m_currentFile) && !m_watcher->files().contains(m_currentFile))
-        m_watcher->addPath(m_currentFile);
-    m_reloadTimer->start();
+    if (m_socket)
+        m_socket->deleteLater();
+    m_socket = m_server->nextPendingConnection();
+    m_pendingData.clear();
+    connect(m_socket, &QTcpSocket::readyRead, this, &PlotPane::readPlotData);
+    connect(m_socket, &QTcpSocket::disconnected, this, [this]() {
+        m_socket->deleteLater();
+        m_socket = nullptr;
+    });
 }
 
 void PlotPane::refresh()
 {
-    if (!QFile::exists(m_currentFile))
-        return;
-
-    loadPlot(m_currentFile);
+    // Plot updates arrive through the local channel.
 }
 
 void PlotPane::zoomIn()
@@ -200,6 +291,9 @@ void PlotPane::zoomFit()
 void PlotPane::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+    writePlotSize();
+    if (m_resizeTimer)
+        m_resizeTimer->start();
     if (!m_userZoomed)
         scheduleFit();
 }

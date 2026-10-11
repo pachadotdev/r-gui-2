@@ -42,6 +42,7 @@ public:
     ~TerminalWidget();
 
     void setTheme(const EditorTheme &theme);
+    void setFontFamily(const QString &family);
     QString getShell() const { return shellPath; }
     void setArgs(const QStringList &args);
     void writeToShell(const QString &text);
@@ -72,6 +73,10 @@ private:
     QWebChannel    *channel = nullptr;
     bool ptyStarted = false;
     bool pageLoaded = false;
+    bool  suppressInternalOutput = false;
+    bool  suppressInternalPrompt = false;
+    QByteArray internalOutputBuffer;
+    QByteArray internalOutputMarker;
     int  pendingFontSize = 0;   // 0 = none pending
     QTimer *fitTimer = nullptr;
 

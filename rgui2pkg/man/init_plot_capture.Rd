@@ -2,25 +2,18 @@
 % Please edit documentation in core.R
 \name{init_plot_capture}
 \alias{init_plot_capture}
-\title{Initialise silent plot capture}
+\title{Initialise plot capture}
 \usage{
-init_plot_capture(plot_dir)
+init_plot_capture(port_file, size_file)
 }
 
 \arguments{
-\item{plot_dir}{Directory where the plot PNG files are written. Created
-  if it doesn't already exist.}
+\item{port_file}{File containing the localhost TCP port used by the Q IDE.}
+\item{size_file}{File containing the requested plot width and height in pixels.}
 }
 
 \description{
-Redirects R's default graphics device so plots never open a disruptive
-native OS popup window (X11/Windows/Quartz). Instead, plotting is
-redirected to a small offscreen PNG device, and after every top-level
-command the current plot (if changed) is re-rendered into a single,
-fixed-name PNG file (\code{rgui2_current.png}) inside \code{plot_dir} so
-the Q IDE's Plots pane can watch that one file and display it in-app on
-every platform. Both backing files are reused/overwritten in place;
-no additional per-plot files accumulate on disk.
+Installs the compiled native graphics device and sends its raw RGB framebuffer
+over a localhost connection to the Q IDE. On Linux the device uses Cairo for
+shape and text rendering.
 }
-
-

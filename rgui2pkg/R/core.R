@@ -63,7 +63,8 @@ get_env_info <- function() {
       objects = list(),
       types = list(),
       dim = list(),
-      len = list()
+      len = list(),
+      members = list()
     ))
   }
   
@@ -90,15 +91,34 @@ get_env_info <- function() {
   safe_size <- function(x) {
     tryCatch(as.numeric(object.size(x)), error = function(e) 0)
   }
-  
+
+  safe_members <- function(x) {
+    tryCatch({
+      nms <- names(x)
+      if (is.null(nms)) character() else unique(nms[nzchar(nms)])
+    }, error = function(e) character())
+  }
+
   sizes <- lapply(vals, safe_size)
   total_size <- sum(unlist(sizes))
-  
+  visible_names <- unique(unlist(lapply(search(), function(pos) {
+    tryCatch(ls(envir = as.environment(pos)), error = function(e) character())
+  })))
+  visible_vals <- lapply(visible_names, function(name) {
+    tryCatch(get(name, envir = .GlobalEnv, inherits = TRUE), error = function(e) NULL)
+  })
+  member_lists <- lapply(visible_vals, safe_members)
+  has_members <- lengths(member_lists) > 0L
+  member_lists <- member_lists[has_members]
+  member_names <- visible_names[has_members]
+  names(member_lists) <- member_names
+
   info <- list(
     objects = I(objs),
     types = lapply(vals, safe_class),
     dim = lapply(vals, safe_dim),
     len = lapply(vals, safe_len),
+    members = member_lists,
     size = sizes,
     total_size = total_size
   )
@@ -106,37 +126,51 @@ get_env_info <- function() {
   return(info)
 }
 
-#' Initialise silent plot capture
+#' Initialise plot capture
 #'
-#' Redirects R's default graphics device so plots never open a disruptive
-#' native OS popup window (X11/Windows/Quartz). Instead, plotting is
-#' redirected to a small offscreen PNG device, and after every top-level
-#' command the current plot (if changed) is re-rendered into a single,
-#' fixed-name PNG file (\code{rgui2_current.png}) inside \code{plot_dir} so
-#' the Q IDE's Plots pane can watch that one file and display it in-app on
-#' every platform. Both backing files are reused/overwritten in place;
-#' no additional per-plot files accumulate on disk.
+#' Installs the compiled Cairo-backed graphics device used by the Q IDE.
 #'
-#' @param plot_dir Directory where the plot PNG files are written. Created
-#'   if it doesn't already exist.
+#' @param port_file File containing the localhost TCP port used by the Q IDE.
+#' @param size_file File containing the requested plot width and height in pixels.
 #' @export
-init_plot_capture <- function(plot_dir) {
-  dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
-
-  # Fixed, reused filenames: content of `device_file` is a throwaway working
-  # buffer (grDevices::png() needs *some* real file to open); the actual
-  # image shown by the IDE is `current_file`, re-rendered from the in-memory
-  # display list on every redraw. Neither file's *name* ever changes, so
-  # nothing new accumulates on disk across successive plots.
-  device_file  <- file.path(plot_dir, "rgui2_device.png")
-  current_file <- file.path(plot_dir, "rgui2_current.png")
-
+init_plot_capture <- function(port_file, size_file) {
+  requested_size <- function() {
+    if (!file.exists(size_file))
+      return(c(0L, 0L))
+    fields <- strsplit(readLines(size_file, warn = FALSE)[1L], " +")[[1L]]
+    if (length(fields) != 2L)
+      return(c(0L, 0L))
+    size <- suppressWarnings(as.integer(fields))
+    if (anyNA(size) || any(size < 1L))
+      return(c(0L, 0L))
+    pmax(size, c(320L, 240L))
+  }
+  size <- requested_size()
+  if (any(size == 0L))
+    size <- c(672L, 480L)
+  if (grDevices::dev.cur() != 1L)
+    try(grDevices::dev.off(), silent = TRUE)
+  .Call("rgui2_native_init", normalizePath(port_file, mustWork = FALSE),
+        as.integer(size[[1L]]), as.integer(size[[2L]]), PACKAGE = "rgui2")
   options(device = function(width = 7, height = 5, ...) {
-    grDevices::png(device_file,
-                   width  = round(width  * 96),
-                   height = round(height * 96),
-                   res    = 96, ...)
-    grDevices::dev.control(displaylist = "enable")
+    size <- requested_size()
+    if (any(size == 0L))
+      size <- c(round(width * 96), round(height * 96))
+    .Call("rgui2_native_init", normalizePath(port_file, mustWork = FALSE),
+          as.integer(size[[1L]]), as.integer(size[[2L]]), PACKAGE = "rgui2")
+    invisible(NULL)
+  })
+
+  options(rgui2.plot_refresh = function() {
+    if (grDevices::dev.cur() == 1L)
+      return(invisible(NULL))
+    size <- requested_size()
+    recorded <- tryCatch(grDevices::recordPlot(), error = function(e) NULL)
+    if (!is.null(recorded) && all(size > 0L)) {
+      .Call("rgui2_native_resize", as.integer(size[[1L]]),
+            as.integer(size[[2L]]), PACKAGE = "rgui2")
+      grDevices::replayPlot(recorded)
+    }
     invisible(NULL)
   })
 
@@ -147,20 +181,22 @@ init_plot_capture <- function(plot_dir) {
   addTaskCallback(function(expr, value, ok, visible) {
     if (grDevices::dev.cur() != 1L) {
       tryCatch({
-        recorded <- grDevices::recordPlot()
-        if (length(recorded[[1]]) > 0L) {
-          # Re-rendering (rather than copying the raw device file) always
-          # updates current_file's mtime, so a simple file watcher on this
-          # one fixed path is enough to detect every redraw.
-          grDevices::png(current_file, width = 800L, height = 600L, res = 96L)
-          grDevices::replayPlot(recorded)
-          grDevices::dev.off()
-        }
+        getOption("rgui2.plot_refresh")()
+        .Call("rgui2_native_send", PACKAGE = "rgui2")
       }, error = function(e) NULL)
     }
     TRUE
   }, name = cb_name)
 
+  invisible(NULL)
+}
+
+#' Re-render the active plot at the current pane dimensions
+#' @export
+refresh_plot <- function() {
+  callback <- getOption("rgui2.plot_refresh")
+  if (is.function(callback))
+    callback()
   invisible(NULL)
 }
 
