@@ -7,6 +7,7 @@
 #include <QClipboard>
 #include <QContextMenuEvent>
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -67,7 +68,7 @@ static QString findWindowsRterm(QString *rHomeOut = nullptr)
             QDir(rHome).filePath("bin/Rterm.exe")
         };
         for (const QString &candidate : candidates) {
-            if (QFileInfo::isFile(candidate)) {
+            if (QFileInfo(candidate).isFile()) {
                 if (rHomeOut) *rHomeOut = QDir::cleanPath(rHome);
                 return QDir::cleanPath(candidate);
             }
@@ -82,7 +83,7 @@ static QString findWindowsRterm(QString *rHomeOut = nullptr)
     }
 
     QString found = QStandardPaths::findExecutable("Rterm.exe");
-    if (!found.isEmpty() && QFileInfo::isFile(found)) {
+    if (!found.isEmpty() && QFileInfo(found).isFile()) {
         QDir binDir = QFileInfo(found).dir();
         if (binDir.dirName().compare("x64", Qt::CaseInsensitive) == 0)
             binDir.cdUp();
@@ -527,8 +528,16 @@ void TerminalWidget::startPty()
         const DWORD error = GetLastError();
         pty->hProcess = INVALID_HANDLE_VALUE;
         pty->hThread = INVALID_HANDLE_VALUE;
-        insertPlainText(QString("Unable to start R. Rterm.exe was not found or could not be launched "
-                                "(Windows error %1).\r\n").arg(error));
+        const QString message = QString("Unable to start R. Rterm.exe was not found or could not be "
+                                        "launched (Windows error %1).").arg(error);
+        qWarning().noquote() << message;
+        page()->runJavaScript(QString(
+            "if(window.term){term.write('\\r\\n\\x1b[31m%1\\x1b[0m\\r\\n');}"
+        ).arg(message
+              .replace("\\", "\\\\")
+              .replace("'", "\\'")
+              .replace("\r", "")
+              .replace("\n", "\\n")));
         CloseHandle(pty->hPtyIn);
         CloseHandle(pty->hPtyOut);
         ClosePseudoConsole(pty->hPCon);
