@@ -14,6 +14,6 @@ init_plot_capture(port_file, size_file)
 }
 
 \description{
-Installs the compiled Cairo-backed graphics device used by the Q IDE.
+Makes R draw into an off-screen Cairo PNG device. After every top-level command the current plot is re-rendered at the pane size (at 2x scale for sharper output) and sent to the Q IDE over a localhost socket.
 }
 

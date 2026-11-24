@@ -81,23 +81,21 @@ MainWindow::MainWindow(QWidget *parent)
     helpPane = new HelpPane(console, this);
     m_rightTabs = new QTabWidget(this);
     m_rightTabs->addTab(envPane,   tr("Environment"));
-    m_rightTabs->addTab(plotPane,  tr("Plots"));
     m_rightTabs->addTab(helpPane,  tr("Help"));
 
-    // Auto-switch to the Plots tab whenever a new/updated plot arrives, so
-    // running plotting code always brings the result into view.
-    connect(plotPane, &PlotPane::plotUpdated, this, [this]() {
-        // Do not steal focus from the Environment pane while a command such
-        // as `x <- 1` refreshes the R session. Plot-producing commands still
-        // switch to Plots when another right-hand pane is active.
-        if (m_rightTabs->currentWidget() != envPane)
-            m_rightTabs->setCurrentWidget(plotPane);
-    });
+    // Plots live in their own lower pane so they stay visible next to the
+    // Environment / Help tabs.
+    m_rightSplitter = new QSplitter(Qt::Vertical, this);
+    m_rightSplitter->addWidget(m_rightTabs);
+    m_rightSplitter->addWidget(plotPane);
+    m_rightSplitter->setChildrenCollapsible(false);
+    m_rightSplitter->setSizes({1, 1});
+
     // ── Outer horizontal splitter (left | center | right) ────────────────────
     m_outerSplitter = new QSplitter(Qt::Horizontal, this);
     m_outerSplitter->addWidget(fileBrowser);
     m_outerSplitter->addWidget(m_centerSplitter);
-    m_outerSplitter->addWidget(m_rightTabs);
+    m_outerSplitter->addWidget(m_rightSplitter);
     m_outerSplitter->setChildrenCollapsible(false);
 
     setCentralWidget(m_outerSplitter);

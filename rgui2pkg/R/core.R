@@ -128,150 +128,91 @@ get_env_info <- function() {
 
 #' Initialise plot capture
 #'
-#' Installs the compiled Cairo-backed graphics device used by the Q IDE.
+#' Makes R draw into an off-screen Cairo PNG device. After every top-level
+#' command the current plot is re-rendered at the pane size (at 2x scale for
+#' sharper output) and sent to the Q IDE over a localhost socket.
 #'
 #' @param port_file File containing the localhost TCP port used by the Q IDE.
 #' @param size_file File containing the requested plot width and height in pixels.
 #' @export
 init_plot_capture <- function(port_file, size_file) {
+  scale <- 2
+  png_path <- file.path(tempdir(), "rgui2_plot.png")
+  live_path <- file.path(tempdir(), "rgui2_live%03d.png")
+  last_signature <- NULL
+
   requested_size <- function() {
-    if (!file.exists(size_file))
-      return(c(0L, 0L))
-    fields <- strsplit(readLines(size_file, warn = FALSE)[1L], " +")[[1L]]
-    if (length(fields) != 2L)
-      return(c(0L, 0L))
-    size <- suppressWarnings(as.integer(fields))
-    if (anyNA(size) || any(size < 1L))
-      return(c(0L, 0L))
-    pmax(size, c(320L, 240L))
-  }
-
-  # Windows uses the CRAN Cairo package for the file-backed device. This
-  # avoids the interactive windows device, which opens an external window.
-  if (.Platform$OS.type == "windows") {
-    png_path <- file.path(tempdir(), "rgui2_plot.png")
-    open_png <- function(path, size, ...) {
-      if (!requireNamespace("Cairo", quietly = TRUE))
-        stop("The Cairo R package is required for Windows plot capture")
-      Cairo::CairoPNG(filename = path, width = size[[1L]], height = size[[2L]],
-                      units = "px", dpi = 96, ...)
-    }
-    last_plot_signature <- NULL
-
-    send_png <- function(path, size) {
-      port <- suppressWarnings(as.integer(readLines(port_file, n = 1L,
-                                                     warn = FALSE)))
-      file_size <- if (file.exists(path)) file.info(path)$size else NA_real_
-      if (!length(port) || is.na(port) || port <= 0L || is.na(file_size)
-          || file_size <= 0)
-        return(invisible(NULL))
-
-      con <- NULL
-      tryCatch({
-        con <- socketConnection("127.0.0.1", port = port, open = "wb",
-                                blocking = TRUE)
-        writeBin(charToRaw(sprintf("RGPN %d 0\n", as.double(file_size))), con)
-        writeBin(readBin(path, "raw", n = file_size), con)
-      }, error = function(e) {
-        message("rgui2 plot transfer failed: ", conditionMessage(e))
-      },
-      finally = if (!is.null(con)) close(con))
-      invisible(NULL)
-    }
-
-    reopen_png <- function(size) {
-      open_png(png_path, size)
-    }
-
-    capture_plot <- function() {
-      if (grDevices::dev.cur() == 1L)
-        return(invisible(NULL))
-      size <- requested_size()
-      if (any(size == 0L))
-        size <- c(672L, 480L)
-      recorded <- tryCatch(grDevices::recordPlot(), error = function(e) NULL)
-      signature <- if (is.null(recorded)) NULL else serialize(recorded, NULL)
-      if (identical(signature, last_plot_signature))
-        return(invisible(NULL))
-      last_plot_signature <<- signature
-      grDevices::dev.off()
-      if (!is.null(recorded)) {
-        reopen_png(size)
-        grDevices::replayPlot(recorded)
-        grDevices::dev.off()
-      }
-      send_png(png_path, size)
-      reopen_png(size)
-      invisible(NULL)
-    }
-
-    options(device = function(width = 7, height = 5, ...) {
-      size <- requested_size()
-      if (any(size == 0L))
-        size <- c(round(width * 96), round(height * 96))
-      open_png(png_path, size, ...)
-    })
-    options(rgui2.plot_refresh = capture_plot)
-    cb_name <- "rgui2_plot_capture"
-    if (cb_name %in% getTaskCallbackNames())
-      removeTaskCallback(cb_name)
-    addTaskCallback(function(expr, value, ok, visible) {
-      tryCatch({
-        getOption("rgui2.plot_refresh")()
-      }, error = function(e) NULL)
-      TRUE
-    }, name = cb_name)
-
-    initial_size <- requested_size()
-    if (any(initial_size == 0L))
-      initial_size <- c(672L, 480L)
-    open_png(png_path, initial_size)
-    return(invisible(NULL))
-  }
-
-  size <- requested_size()
-  if (any(size == 0L))
     size <- c(672L, 480L)
-  if (grDevices::dev.cur() != 1L)
-    try(grDevices::dev.off(), silent = TRUE)
-  .Call("rgui2_native_init", normalizePath(port_file, mustWork = FALSE),
-        as.integer(size[[1L]]), as.integer(size[[2L]]), PACKAGE = "rgui2")
-  options(device = function(width = 7, height = 5, ...) {
-    size <- requested_size()
-    if (any(size == 0L))
-      size <- c(round(width * 96), round(height * 96))
-    .Call("rgui2_native_init", normalizePath(port_file, mustWork = FALSE),
-          as.integer(size[[1L]]), as.integer(size[[2L]]), PACKAGE = "rgui2")
-    invisible(NULL)
-  })
+    if (file.exists(size_file)) {
+      fields <- suppressWarnings(as.integer(
+        strsplit(readLines(size_file, n = 1L, warn = FALSE), " +")[[1L]]))
+      if (length(fields) == 2L && !anyNA(fields) && all(fields > 0L))
+        size <- pmax(fields, c(320L, 240L))
+    }
+    size
+  }
 
-  options(rgui2.plot_refresh = function() {
+  open_png <- function(size = requested_size(), file = live_path) {
+    grDevices::png(file, width = size[[1L]] * scale,
+                   height = size[[2L]] * scale, res = 96 * scale,
+                   type = "cairo")
+    # File devices don't keep a display list by default, which recordPlot()
+    # needs.
+    grDevices::dev.control("enable")
+  }
+
+  send_png <- function() {
+    port <- suppressWarnings(as.integer(readLines(port_file, n = 1L,
+                                                   warn = FALSE)))
+    bytes <- if (file.exists(png_path)) file.info(png_path)$size else NA_real_
+    if (!length(port) || is.na(port) || port <= 0L || is.na(bytes) || bytes <= 0)
+      return(invisible(NULL))
+    con <- NULL
+    tryCatch({
+      con <- socketConnection("127.0.0.1", port = port, open = "wb",
+                              blocking = TRUE)
+      writeBin(charToRaw(sprintf("RGPN %.0f 0\n", bytes)), con)
+      writeBin(readBin(png_path, "raw", n = bytes), con)
+    }, error = function(e) {
+      message("rgui2 plot transfer failed: ", conditionMessage(e))
+    }, finally = if (!is.null(con)) close(con))
+    invisible(NULL)
+  }
+
+  capture_plot <- function(force = FALSE) {
     if (grDevices::dev.cur() == 1L)
       return(invisible(NULL))
     size <- requested_size()
     recorded <- tryCatch(grDevices::recordPlot(), error = function(e) NULL)
-    if (!is.null(recorded) && all(size > 0L)) {
-      .Call("rgui2_native_resize", as.integer(size[[1L]]),
-            as.integer(size[[2L]]), PACKAGE = "rgui2")
-      grDevices::replayPlot(recorded)
-    }
+    signature <- list(if (!is.null(recorded)) serialize(recorded, NULL), size)
+    if (!force && identical(signature, last_signature))
+      return(invisible(NULL))
+    last_signature <<- signature
+    if (is.null(recorded))
+      return(invisible(NULL))
+    # Render the recorded plot on a throw-away device so the live device keeps
+    # its state and later calls such as lines() or text() still work.
+    live <- grDevices::dev.cur()
+    open_png(size, file = png_path)
+    grDevices::replayPlot(recorded)
+    grDevices::dev.off()
+    grDevices::dev.set(live)
+    send_png()
     invisible(NULL)
-  })
+  }
+
+  options(device = function(width = 7, height = 5, ...) open_png())
+  options(rgui2.plot_refresh = function() capture_plot(force = TRUE))
 
   cb_name <- "rgui2_plot_capture"
   if (cb_name %in% getTaskCallbackNames())
     removeTaskCallback(cb_name)
-
-  addTaskCallback(function(expr, value, ok, visible) {
-    if (grDevices::dev.cur() != 1L) {
-      tryCatch({
-        getOption("rgui2.plot_refresh")()
-        .Call("rgui2_native_send", PACKAGE = "rgui2")
-      }, error = function(e) NULL)
-    }
+  addTaskCallback(function(...) {
+    tryCatch(capture_plot(), error = function(e) NULL)
     TRUE
   }, name = cb_name)
 
+  open_png()
   invisible(NULL)
 }
 

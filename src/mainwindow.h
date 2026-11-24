@@ -53,6 +53,7 @@ private:
 
     // Right-panel tab widget (Help / Environment / Plots)
     QTabWidget *m_rightTabs = nullptr;
+    QSplitter  *m_rightSplitter = nullptr;  // vertical: Environment/Help over Plots
 
     // Splitters
     QSplitter  *m_outerSplitter  = nullptr;  // horizontal: files | editor+console | right

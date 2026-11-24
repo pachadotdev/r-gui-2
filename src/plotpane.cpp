@@ -5,7 +5,6 @@
 #include <QResizeEvent>
 #include <QSizePolicy>
 #include <QScrollBar>
-#include <QImage>
 #include <QHostAddress>
 
 PlotPane::PlotPane(const QString &plotChannelFile, const QString &plotSizeFile,
@@ -110,65 +109,30 @@ void PlotPane::readPlotData()
         return;
 
     const QList<QByteArray> fields = m_pendingData.left(headerEnd).split(' ');
-    if (fields.size() != 3 || (fields[0] != "RGPL" && fields[0] != "RGPN")) {
+    if (fields.size() != 3 || fields[0] != "RGPN") {
         m_pendingData.clear();
         return;
     }
-    const int width = fields[1].toInt();
-    const int height = fields[2].toInt();
-    if (fields[0] == "RGPN") {
-        // PNG frames carry their byte length in the second header field;
-        // unlike raw RGPL frames, their image dimensions are encoded in PNG.
-        const qsizetype payloadSize = static_cast<qsizetype>(width);
-        if (payloadSize <= 0 || m_pendingData.size() < headerEnd + 1 + payloadSize)
-            return;
-        const QByteArray payload = m_pendingData.mid(headerEnd + 1, payloadSize);
-        m_pendingData.remove(0, headerEnd + 1 + payloadSize);
-        QPixmap px;
-        if (!px.loadFromData(payload, "PNG"))
-            return;
-        m_currentPixmap = px;
-        m_scrollArea->setWidgetResizable(false);
-        if (!m_userZoomed) {
-            zoomFit();
-            scheduleFit();
-        } else {
-            applyZoom();
-        }
-        scheduleInitialRefresh();
-        emit plotUpdated();
+    // The second header field is the PNG byte length; image dimensions are
+    // encoded in the PNG itself.
+    const qsizetype payloadSize = fields[1].toLongLong();
+    if (payloadSize <= 0 || m_pendingData.size() < headerEnd + 1 + payloadSize)
         return;
-    }
-    const qsizetype payloadSize = static_cast<qsizetype>(width) * height * 3;
-    if (width <= 0 || height <= 0 || payloadSize <= 0
-        || m_pendingData.size() < headerEnd + 1 + payloadSize)
-        return;
-
     const QByteArray payload = m_pendingData.mid(headerEnd + 1, payloadSize);
     m_pendingData.remove(0, headerEnd + 1 + payloadSize);
-    // The native device sends tightly packed RGB rows.  Pass the row stride
-    // explicitly: letting QImage infer it may add alignment padding, which
-    // shears images whose width is not divisible by four.
-    QImage image(reinterpret_cast<const uchar *>(payload.constData()), width, height,
-                 width * 3, QImage::Format_RGB888);
-    QPixmap px = QPixmap::fromImage(image.copy());
-    if (px.isNull())
+    QPixmap px;
+    if (!px.loadFromData(payload, "PNG"))
         return;
 
     m_currentPixmap = px;
-    // Once a real plot is showing, let the label keep its own explicit
-    // (possibly zoomed) size instead of being force-fit to the viewport, so
-    // scrollbars appear correctly when zoomed in.
+    // Let the label keep its own (possibly zoomed) size so scrollbars work.
     m_scrollArea->setWidgetResizable(false);
-
-    if (!m_userZoomed)
-    {
-        zoomFit();   // auto-fit new plots unless the user has manually zoomed
+    if (!m_userZoomed) {
+        zoomFit();
         scheduleFit();
-    }
-    else
+    } else {
         applyZoom();
-
+    }
     scheduleInitialRefresh();
     emit plotUpdated();
 }
