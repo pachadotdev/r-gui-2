@@ -140,6 +140,9 @@ init_plot_capture <- function(port_file, size_file) {
   png_path <- file.path(tempdir(), "rgui2_plot.png")
   live_path <- file.path(tempdir(), "rgui2_live%03d.png")
   last_signature <- NULL
+  last_recorded <- NULL
+  save_file <- paste0(size_file, ".save")
+  save_result_file <- paste0(size_file, ".saveresult")
 
   requested_size <- function() {
     size <- c(672L, 480L)
@@ -188,6 +191,8 @@ init_plot_capture <- function(port_file, size_file) {
     if (!force && identical(signature, last_signature))
       return(invisible(NULL))
     last_signature <<- signature
+    if (!is.null(recorded))
+      last_recorded <<- recorded
     if (is.null(recorded))
       return(invisible(NULL))
     # Render the recorded plot on a throw-away device so the live device keeps
@@ -201,6 +206,57 @@ init_plot_capture <- function(port_file, size_file) {
     invisible(NULL)
   }
 
+  # Re-draws the last plot natively at the requested size, equivalent to
+  # png(file, width, height); <plot>; dev.off().
+  save_plot <- function(file, format, width, height) {
+    if (is.null(last_recorded))
+      stop("there is no plot to save")
+    live <- grDevices::dev.cur()
+    switch(format,
+      png = grDevices::png(file, width = width, height = height, res = 96,
+                           type = "cairo"),
+      jpg = grDevices::jpeg(file, width = width, height = height, res = 96,
+                            quality = 95, type = "cairo"),
+      svg = grDevices::svg(file, width = width / 96, height = height / 96),
+      stop("unsupported format: ", format))
+    on.exit({
+      grDevices::dev.off()
+      if (live > 1L && live %in% grDevices::dev.list())
+        grDevices::dev.set(live)
+    })
+    grDevices::replayPlot(last_recorded)
+    invisible(NULL)
+  }
+
+  process_save_request <- function() {
+    if (!file.exists(save_file))
+      return(invisible(NULL))
+    line <- tryCatch(readLines(save_file, n = 1L, warn = FALSE),
+                     error = function(e) character())
+    try(file.remove(save_file), silent = TRUE)
+    if (!length(line) || !nzchar(line))
+      return(invisible(NULL))
+    # Format: <format>|<width>|<height>|<path>
+    fields <- strsplit(line, "|", fixed = TRUE)[[1L]]
+    result <- tryCatch({
+      if (length(fields) < 4L)
+        stop("malformed save request")
+      save_plot(paste(fields[-(1:3)], collapse = "|"), fields[[1L]],
+                as.integer(fields[[2L]]), as.integer(fields[[3L]]))
+      "ok"
+    }, error = function(e) paste("error:", conditionMessage(e)))
+    writeLines(result, save_result_file)
+    invisible(NULL)
+  }
+
+  if (requireNamespace("later", quietly = TRUE)) {
+    poll_save <- function() {
+      tryCatch(process_save_request(), error = function(e) NULL)
+      later::later(poll_save, delay = 0.15)
+    }
+    later::later(poll_save, delay = 0.15)
+  }
+
   options(device = function(width = 7, height = 5, ...) open_png())
   options(rgui2.plot_refresh = function() capture_plot(force = TRUE))
 
@@ -208,6 +264,7 @@ init_plot_capture <- function(port_file, size_file) {
   if (cb_name %in% getTaskCallbackNames())
     removeTaskCallback(cb_name)
   addTaskCallback(function(...) {
+    tryCatch(process_save_request(), error = function(e) NULL)
     tryCatch(capture_plot(), error = function(e) NULL)
     TRUE
   }, name = cb_name)

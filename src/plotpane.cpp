@@ -1,6 +1,17 @@
 #include "plotpane.h"
 
+#include <QCheckBox>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFormLayout>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QSpinBox>
+#include <QStandardPaths>
 #include <QFile>
 #include <QResizeEvent>
 #include <QSizePolicy>
@@ -28,9 +39,13 @@ PlotPane::PlotPane(const QString &plotChannelFile, const QString &plotSizeFile,
     m_zoomFitBtn = new QPushButton(tr("Fit"), this);
     m_zoomInBtn  = new QPushButton(tr("+"), this);
 
+    m_saveBtn = new QPushButton(tr("Save…"), this);
+    m_saveBtn->setToolTip(tr("Save the current plot as an image"));
+
     for (QPushButton *b : {m_zoomOutBtn, m_zoomFitBtn, m_zoomInBtn})
         b->setFixedWidth(32);
 
+    tbLayout->addWidget(m_saveBtn);
     tbLayout->addStretch();
     tbLayout->addWidget(m_zoomOutBtn);
     tbLayout->addWidget(m_zoomFitBtn);
@@ -78,6 +93,7 @@ PlotPane::PlotPane(const QString &plotChannelFile, const QString &plotSizeFile,
     connect(m_resizeTimer, &QTimer::timeout,
             this, &PlotPane::plotResizeRequested);
 
+    connect(m_saveBtn, &QPushButton::clicked, this, &PlotPane::savePlot);
     connect(m_zoomInBtn,  &QPushButton::clicked, this, &PlotPane::zoomIn);
     connect(m_zoomOutBtn, &QPushButton::clicked, this, &PlotPane::zoomOut);
     connect(m_zoomFitBtn, &QPushButton::clicked, this, &PlotPane::zoomFit);
@@ -252,6 +268,135 @@ void PlotPane::zoomFit()
 
     m_zoomFactor = static_cast<double>(available) / imgWidth;
     applyZoom();
+}
+
+void PlotPane::savePlot()
+{
+    if (m_currentPixmap.isNull()) {
+        QMessageBox::information(this, tr("Save Plot"), tr("There is no plot to save."));
+        return;
+    }
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Save Plot"));
+    QFormLayout *form = new QFormLayout(&dlg);
+
+    QComboBox *format = new QComboBox(&dlg);
+    format->addItem("PNG", "png");
+    format->addItem("JPEG", "jpg");
+    format->addItem("SVG", "svg");
+
+    const QSize orig = m_scrollArea->viewport()->size().expandedTo(QSize(320, 240));
+    QSpinBox *width = new QSpinBox(&dlg);
+    QSpinBox *height = new QSpinBox(&dlg);
+    width->setRange(16, 20000);
+    height->setRange(16, 20000);
+    width->setSuffix(" px");
+    height->setSuffix(" px");
+    width->setValue(orig.width());
+    height->setValue(orig.height());
+
+    // Keep the aspect ratio while editing either dimension.
+    const double ratio = orig.height() > 0 ? double(orig.width()) / orig.height() : 1.0;
+    QCheckBox *keepRatio = new QCheckBox(tr("Maintain aspect ratio"), &dlg);
+    connect(width, &QSpinBox::valueChanged, &dlg, [=](int w) {
+        if (!keepRatio->isChecked()) return;
+        QSignalBlocker b(height);
+        height->setValue(qRound(w / ratio));
+    });
+    connect(height, &QSpinBox::valueChanged, &dlg, [=](int h) {
+        if (!keepRatio->isChecked()) return;
+        QSignalBlocker b(width);
+        width->setValue(qRound(h * ratio));
+    });
+
+    QLineEdit *path = new QLineEdit(
+        QDir(QStandardPaths::writableLocation(QStandardPaths::PicturesLocation))
+            .filePath("plot.png"), &dlg);
+    QPushButton *browse = new QPushButton(tr("Browse…"), &dlg);
+    QWidget *pathRow = new QWidget(&dlg);
+    QHBoxLayout *pathLayout = new QHBoxLayout(pathRow);
+    pathLayout->setContentsMargins(0, 0, 0, 0);
+    pathLayout->addWidget(path);
+    pathLayout->addWidget(browse);
+
+    auto syncExtension = [=]() {
+        QFileInfo fi(path->text());
+        if (fi.fileName().isEmpty()) return;
+        path->setText(fi.path() + "/" + fi.completeBaseName() + "."
+                      + format->currentData().toString());
+    };
+    connect(format, &QComboBox::currentIndexChanged, &dlg, syncExtension);
+    connect(browse, &QPushButton::clicked, &dlg, [=]() {
+        const QString f = QFileDialog::getSaveFileName(
+            pathRow, tr("Save Plot"), path->text(),
+            tr("PNG (*.png);;JPEG (*.jpg *.jpeg);;SVG (*.svg)"));
+        if (f.isEmpty()) return;
+        path->setText(f);
+        const QString ext = QFileInfo(f).suffix().toLower();
+        int idx = ext == "svg" ? 2 : (ext == "jpg" || ext == "jpeg") ? 1 : 0;
+        format->setCurrentIndex(idx);
+        path->setText(f);
+    });
+
+    form->addRow(tr("Format:"), format);
+    form->addRow(tr("Save as:"), pathRow);
+    form->addRow(tr("Width:"), width);
+    form->addRow(tr("Height:"), height);
+    form->addRow(keepRatio);
+    QDialogButtonBox *box = new QDialogButtonBox(
+        QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dlg);
+    form->addRow(box);
+    connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted || path->text().isEmpty())
+        return;
+
+    requestSave(format->currentData().toString(), path->text(), width->value(), height->value());
+}
+
+void PlotPane::requestSave(const QString &fmt, const QString &file, int w, int h)
+{
+    if (m_plotSizeFile.isEmpty()) {
+        QMessageBox::warning(this, tr("Save Plot"), tr("R plot channel is unavailable."));
+        return;
+    }
+    // R re-draws the plot natively at the requested size
+    // (png()/jpeg()/svg() + replayPlot + dev.off()) and reports the result.
+    const QString resultPath = m_plotSizeFile + ".saveresult";
+    QFile::remove(resultPath);
+    QFile req(m_plotSizeFile + ".save");
+    if (!req.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, tr("Save Plot"), tr("Could not send the request to R."));
+        return;
+    }
+    req.write(QStringLiteral("%1|%2|%3|%4\n").arg(fmt).arg(w).arg(h).arg(file).toUtf8());
+    req.close();
+
+    QTimer *timer = new QTimer(this);
+    auto *elapsed = new int(0);
+    connect(timer, &QTimer::timeout, this, [=]() {
+        QFile res(resultPath);
+        QString msg;
+        if (res.exists() && res.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            msg = QString::fromUtf8(res.readAll()).trimmed();
+            res.close();
+            QFile::remove(resultPath);
+        } else if ((*elapsed += 100) >= 15000) {
+            msg = tr("error: R did not respond (is it busy?)");
+            QFile::remove(m_plotSizeFile + ".save");
+        } else {
+            return;
+        }
+        timer->stop();
+        timer->deleteLater();
+        delete elapsed;
+        if (msg != "ok")
+            QMessageBox::warning(this, tr("Save Plot"),
+                tr("Could not save the plot to %1.\n%2").arg(file, msg));
+    });
+    timer->start(100);
 }
 
 void PlotPane::resizeEvent(QResizeEvent *event)
