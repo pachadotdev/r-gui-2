@@ -187,6 +187,13 @@ void ThemeManager::setCurrentTheme(const QString &name)
     }
 }
 
+static QColor blend(const QColor &a, const QColor &b, qreal t)
+{
+    return QColor::fromRgbF(a.redF() + (b.redF() - a.redF()) * t,
+                            a.greenF() + (b.greenF() - a.greenF()) * t,
+                            a.blueF() + (b.blueF() - a.blueF()) * t);
+}
+
 QString ThemeManager::toStyleSheet(const EditorTheme &theme) const
 {
     // Create a comprehensive stylesheet for the entire application
@@ -211,7 +218,8 @@ QString ThemeManager::toStyleSheet(const EditorTheme &theme) const
         "   font-family: '%6', monospace;"
         "}"
         "QMenuBar {"
-        "   background-color: %1;"
+        "   background-color: %8;"
+        "   border-bottom: 1px solid %7;"
         "   color: %2;"
         "}"
         "QMenuBar::item:selected {"
@@ -235,26 +243,54 @@ QString ThemeManager::toStyleSheet(const EditorTheme &theme) const
         "   padding: 4px;"
         "}"
         "QTabWidget::pane {"
-        "   border: 1px solid %4;"
+        "   border: none;"
+        "   border-top: 1px solid %7;"
         "   background-color: %1;"
         "}"
+        "QTabWidget::tab-bar { left: 0px; }"
+        "QTabBar {"
+        "   border: none;"
+        "   background-color: %8;"
+        "}"
         "QTabBar::tab {"
+        "   background-color: %8;"
+        "   color: %4;"
+        "   padding: 5px 14px;"
+        "   border: none;"
+        "   border-right: 1px solid %7;"
+        "   border-bottom: 2px solid transparent;"
+        "}"
+        "QTabBar::tab:hover {"
         "   background-color: %5;"
-        "   color: %2;"
-        "   padding: 5px 10px;"
-        "   border: 1px solid %4;"
         "}"
         "QTabBar::tab:selected {"
         "   background-color: %1;"
-        "   border-bottom-color: %1;"
+        "   color: %2;"
+        "   border-bottom: 2px solid %3;"
         "}"
+        "QSplitter::handle { background-color: %7; }"
+        "QSplitter::handle:horizontal {"
+        "   width: 5px;"
+        "   background: qlineargradient(x1:0, y1:0, x2:1, y2:0,"
+        "       stop:0 %8, stop:0.4 %8, stop:0.4 %7, stop:0.6 %7, stop:0.6 %8, stop:1 %8);"
+        "}"
+        "QSplitter::handle:vertical {"
+        "   height: 5px;"
+        "   background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "       stop:0 %8, stop:0.4 %8, stop:0.4 %7, stop:0.6 %7, stop:0.6 %8, stop:1 %8);"
+        "}"
+        "QSplitter::handle:hover, QSplitter::handle:pressed { background: %3; }"
+        "QFrame { border: none; }"
+        "QAbstractScrollArea { border: none; }"
         "QToolBar {"
-        "   background-color: %5;"
+        "   background-color: %8;"
         "   color: %2;"
         "   border: none;"
+        "   border-bottom: 1px solid %7;"
         "}"
         "QStatusBar {"
-        "   background-color: %5;"
+        "   border-top: 1px solid %7;"
+        "   background-color: %8;"
         "   color: %2;"
         "}"
         "QScrollBar:vertical {"
@@ -300,7 +336,7 @@ QString ThemeManager::toStyleSheet(const EditorTheme &theme) const
         "QListWidget {"
         "   background-color: %1;"
         "   color: %2;"
-        "   border: 1px solid %4;"
+        "   border: none;"
         "}"
         "QListWidget::item:selected {"
         "   background-color: %3;"
@@ -309,20 +345,24 @@ QString ThemeManager::toStyleSheet(const EditorTheme &theme) const
         "   background-color: %1;"
         "   color: %2;"
         "   alternate-background-color: %5;"
-        "   border: 1px solid %4;"
+        "   border: none;"
         "}"
         "QHeaderView::section {"
-        "   background-color: %5;"
+        "   background-color: %8;"
         "   color: %2;"
         "   padding: 4px;"
-        "   border: 1px solid %4;"
+        "   border: none;"
+        "   border-right: 1px solid %7;"
+        "   border-bottom: 1px solid %7;"
         "}"
     ).arg(theme.background.name())
      .arg(theme.foreground.name())
      .arg(theme.selection.name())
      .arg(theme.lineNumber.name())
      .arg(theme.lineHighlight.name())
-     .arg(cssFontFamily);
+     .arg(cssFontFamily)
+     .arg(blend(theme.background, theme.foreground, 0.18).name())
+     .arg(blend(theme.background, theme.foreground, 0.06).name());
     
     return stylesheet;
 }
