@@ -50,7 +50,7 @@ EnvironmentPane::EnvironmentPane(TerminalWidget *terminal, QWidget *parent)
     
     // Setup file watcher
     QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    envFilePath = QDir(tempDir).filePath("rgui2_env.json");
+    envFilePath = QDir(tempDir).filePath("simpler_env.json");
     
     // Ensure file exists so watcher can watch it
     QFile f(envFilePath);
@@ -74,7 +74,7 @@ EnvironmentPane::~EnvironmentPane()
 void EnvironmentPane::refreshEnvironment()
 {
     if (!terminal) return;
-    terminal->executeCommandSilent("rgui2::update_env()");
+    terminal->executeCommandSilent("simplerapi::update_env()");
 }
 
 void EnvironmentPane::deleteCheckedItems()

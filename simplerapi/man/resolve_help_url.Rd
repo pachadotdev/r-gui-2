@@ -2,7 +2,7 @@
 % Please edit documentation in core.R
 \name{resolve_help_url}
 \alias{resolve_help_url}
-\title{Resolve an R help topic to an httpd URL for the Q help pane}
+\title{Resolve an R help topic to an httpd URL for the Simpler help pane}
 \usage{
 resolve_help_url(topic, file = NULL)
 }
@@ -19,7 +19,7 @@ The URL string (invisibly when \code{file} is supplied).
 }
 
 \description{
-Used by the Q IDE C++ frontend. Returns (and optionally writes to a file)
+Used by the Simpler C++ frontend. Returns (and optionally writes to a file)
 a URL served by R's dynamic help httpd (\code{tools::startDynamicHelp}).
 Only URLs under \code{/doc} or \code{/library} are valid; this function
 guarantees the returned URL respects that constraint.

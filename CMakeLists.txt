@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(rgui2 VERSION 1.0.0 LANGUAGES CXX)
+project(simpler VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -57,7 +57,7 @@ set(SOURCES
 
 # On Windows: embed the application icon and suppress the console window
 if(WIN32)
-    list(APPEND SOURCES src/rgui2.rc)
+    list(APPEND SOURCES src/simpler.rc)
 endif()
 
 # Create executable
@@ -65,8 +65,8 @@ if(WIN32)
     # WIN32 suppresses the extra console window that would otherwise
     # appear when launching a Qt GUI application.
     add_executable(${PROJECT_NAME} WIN32 ${SOURCES})
-    # Tell rc.exe where to resolve the icon filename used in rgui2.rc
-    set_source_files_properties(src/rgui2.rc PROPERTIES
+    # Tell rc.exe where to resolve the icon filename used in simpler.rc
+    set_source_files_properties(src/simpler.rc PROPERTIES
         COMPILE_FLAGS "/I\"${CMAKE_SOURCE_DIR}/src\"")
 else()
     add_executable(${PROJECT_NAME} ${SOURCES})

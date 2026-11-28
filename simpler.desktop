@@ -1,11 +1,11 @@
 [Desktop Entry]
 Version=0.1
 Type=Application
-Name=R GUI 2
-GenericName=R-GUI-2
+Name=Simpler
+GenericName=Simpler
 Comment=A simple R GUI made with Qt
-Exec=q %F
-Icon=q
+Exec=simpler %F
+Icon=simpler
 Terminal=false
 Categories=Development;GUI;R;Qt
 MimeType=text/x-r-source;text/x-r

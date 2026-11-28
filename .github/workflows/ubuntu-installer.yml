@@ -51,16 +51,16 @@ jobs:
           mkdir -p $PKG/usr/share/applications
           mkdir -p $PKG/DEBIAN
 
-          cp build/bin/rgui2           $PKG/usr/bin/rgui2
+          cp build/bin/simpler           $PKG/usr/bin/simpler
           cp -r build/bin/gogh-themes $PKG/usr/bin/gogh-themes
           cp -r build/bin/fonts       $PKG/usr/bin/fonts
 
-          cat > $PKG/usr/share/applications/r-gui-2.desktop << 'EOF'
+          cat > $PKG/usr/share/applications/simpler.desktop << 'EOF'
           [Desktop Entry]
           Version=0.1
-          Name=R GUI 2
+          Name=Simpler
           Comment=A lightweight Qt-based IDE for R
-          Exec=/usr/bin/rgui2
+          Exec=/usr/bin/simpler
           Icon=utilities-terminal
           Type=Application
           Categories=Development;IDE;
@@ -68,23 +68,23 @@ jobs:
           EOF
 
           cat > $PKG/DEBIAN/control << EOF
-          Package: r-gui-2
+          Package: simpler
           Version: ${{ inputs.version }}
           Section: devel
           Priority: optional
           Architecture: amd64
           Maintainer: Mauricio Vargas Sepulveda
           Depends: libqt6core6t64, libqt6widgets6t64, libqt6gui6t64, libqt6network6t64, r-base
-          Description: R GUI 2
+          Description: Simpler
            A lightweight Qt-based IDE for the R programming language.
           EOF
 
-          dpkg-deb --build $PKG r-gui-2-${{ inputs.version }}-ubuntu.deb
+          dpkg-deb --build $PKG simpler-${{ inputs.version }}-ubuntu.deb
 
       # -- 5. Upload artifact ------------------------------------------------
       - name: Upload DEB package
         uses: actions/upload-artifact@v4
         with:
-          name: R-GUI-2-${{ inputs.version }}-Ubuntu
-          path: r-gui-2-*-ubuntu.deb
+          name: Simpler-${{ inputs.version }}-Ubuntu
+          path: simpler-*-ubuntu.deb
           if-no-files-found: error

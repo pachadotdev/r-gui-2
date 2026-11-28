@@ -3,11 +3,11 @@
 #' @export
 init_monitor <- function(path) {
   # Store the path in a package-internal environment or options
-  options(rgui2.env_path = path)
+  options(simplerapi.env_path = path)
   
   # Remove existing callback if any
-  if ("rgui2_env_monitor" %in% getTaskCallbackNames()) {
-    removeTaskCallback("rgui2_env_monitor")
+  if ("simpler_env_monitor" %in% getTaskCallbackNames()) {
+    removeTaskCallback("simpler_env_monitor")
   }
   
   # Register new callback
@@ -15,10 +15,10 @@ init_monitor <- function(path) {
     tryCatch({
       update_env()
     }, error = function(e) {
-      message("Error in rgui2 monitor: ", e$message)
+      message("Error in simplerapi monitor: ", e$message)
     })
     return(TRUE)
-  }, name = "rgui2_env_monitor")
+  }, name = "simpler_env_monitor")
   
   # Initial update
   update_env()
@@ -28,9 +28,9 @@ init_monitor <- function(path) {
 #' Update the environment file
 #' @export
 update_env <- function() {
-  path <- getOption("rgui2.env_path")
+  path <- getOption("simplerapi.env_path")
   if (is.null(path)) {
-    message("rgui2.env_path is not set")
+    message("simplerapi.env_path is not set")
     return(FALSE)
   }
   
@@ -130,15 +130,15 @@ get_env_info <- function() {
 #'
 #' Makes R draw into an off-screen Cairo PNG device. After every top-level
 #' command the current plot is re-rendered at the pane size (at 2x scale for
-#' sharper output) and sent to the Q IDE over a localhost socket.
+#' sharper output) and sent to the Simpler over a localhost socket.
 #'
-#' @param port_file File containing the localhost TCP port used by the Q IDE.
+#' @param port_file File containing the localhost TCP port used by the Simpler.
 #' @param size_file File containing the requested plot width and height in pixels.
 #' @export
 init_plot_capture <- function(port_file, size_file) {
   scale <- 2
-  png_path <- file.path(tempdir(), "rgui2_plot.png")
-  live_path <- file.path(tempdir(), "rgui2_live%03d.png")
+  png_path <- file.path(tempdir(), "simpler_plot.png")
+  live_path <- file.path(tempdir(), "simpler_live%03d.png")
   last_signature <- NULL
   last_recorded <- NULL
   save_file <- paste0(size_file, ".save")
@@ -177,7 +177,7 @@ init_plot_capture <- function(port_file, size_file) {
       writeBin(charToRaw(sprintf("RGPN %.0f 0\n", bytes)), con)
       writeBin(readBin(png_path, "raw", n = bytes), con)
     }, error = function(e) {
-      message("rgui2 plot transfer failed: ", conditionMessage(e))
+      message("simplerapi plot transfer failed: ", conditionMessage(e))
     }, finally = if (!is.null(con)) close(con))
     invisible(NULL)
   }
@@ -258,9 +258,9 @@ init_plot_capture <- function(port_file, size_file) {
   }
 
   options(device = function(width = 7, height = 5, ...) open_png())
-  options(rgui2.plot_refresh = function() capture_plot(force = TRUE))
+  options(simplerapi.plot_refresh = function() capture_plot(force = TRUE))
 
-  cb_name <- "rgui2_plot_capture"
+  cb_name <- "simpler_plot_capture"
   if (cb_name %in% getTaskCallbackNames())
     removeTaskCallback(cb_name)
   addTaskCallback(function(...) {
@@ -276,7 +276,7 @@ init_plot_capture <- function(port_file, size_file) {
 #' Re-render the active plot at the current pane dimensions
 #' @export
 refresh_plot <- function() {
-  callback <- getOption("rgui2.plot_refresh")
+  callback <- getOption("simplerapi.plot_refresh")
   if (is.function(callback))
     callback()
   invisible(NULL)
@@ -292,9 +292,9 @@ clear <- function() {
   invisible(NULL)
 }
 
-#' Resolve an R help topic to an httpd URL for the Q help pane
+#' Resolve an R help topic to an httpd URL for the Simpler help pane
 #'
-#' Used by the Q IDE C++ frontend. Returns (and optionally writes to a file)
+#' Used by the Simpler C++ frontend. Returns (and optionally writes to a file)
 #' a URL served by R's dynamic help httpd (\code{tools::startDynamicHelp}).
 #' Only URLs under \code{/doc} or \code{/library} are valid; this function
 #' guarantees the returned URL respects that constraint.
@@ -358,7 +358,7 @@ resolve_help_url <- function(topic, file = NULL) {
 #' Initialise the silent help-pane channel
 #'
 #' Starts the dynamic help server, writes its port to \code{port_file}, and
-#' begins polling \code{queue_file} for help-topic requests from the Q IDE
+#' begins polling \code{queue_file} for help-topic requests from the Simpler
 #' frontend. Each line in \code{queue_file} is treated as a topic; the
 #' resulting URL is written to \code{url_file}. Polling is done via
 #' \code{later::later()} so it runs in R's idle event loop and produces
@@ -397,7 +397,7 @@ init_help_pane <- function(port_file, queue_file, url_file, interval = 0.15) {
     later::later(poll, delay = interval)
   } else {
     # Fallback: only fires after each top-level command, but still silent.
-    cb_name <- "rgui2_help_pane"
+    cb_name <- "simpler_help_pane"
     if (cb_name %in% getTaskCallbackNames())
       removeTaskCallback(cb_name)
     addTaskCallback(function(...) {

@@ -56,12 +56,12 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
     , m_terminal(terminal)
     , m_helpPort(0)
 {
-    // These paths must match RGUI2_HELP_PORT_FILE / RGUI2_HELP_QUEUE_FILE /
-    // RGUI2_HELP_URL_FILE in terminalwidget.cpp's setupREnv().
+    // These paths must match SIMPLER_HELP_PORT_FILE / SIMPLER_HELP_QUEUE_FILE /
+    // SIMPLER_HELP_URL_FILE in terminalwidget.cpp's setupREnv().
     QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    m_portFilePath      = QDir(tempDir).filePath("rgui2_help_port");
-    m_helpUrlFilePath   = QDir(tempDir).filePath("rgui2_help_url");
-    m_helpQueueFilePath = QDir(tempDir).filePath("rgui2_help_queue");
+    m_portFilePath      = QDir(tempDir).filePath("simpler_help_port");
+    m_helpUrlFilePath   = QDir(tempDir).filePath("simpler_help_url");
+    m_helpQueueFilePath = QDir(tempDir).filePath("simpler_help_queue");
 
     m_nam = new QNetworkAccessManager(this);
 
@@ -143,7 +143,7 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
 
 void HelpPane::startHelpServer()
 {
-    // rgui2::init_help_pane() (called from the R startup script) starts the
+    // simplerapi::init_help_pane() (called from the R startup script) starts the
     // dynamic help server and writes the port to m_portFilePath as soon as
     // R has finished loading. We just poll the port file until it appears.
     if (m_helpPort == 0)
@@ -314,7 +314,7 @@ void HelpPane::applyThemeStyle()
 
 void HelpPane::resolveHelpTopic(const QString &topic)
 {
-    // Silent channel: write the topic to the queue file. The rgui2 R package
+    // Silent channel: write the topic to the queue file. The simplerapi R package
     // (init_help_pane) polls this file via later::later() and writes the
     // resolved URL to m_helpUrlFilePath without ever touching stdin/stdout.
     QFile f(m_helpQueueFilePath);

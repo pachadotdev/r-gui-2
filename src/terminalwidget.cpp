@@ -181,14 +181,14 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
                          const QString &plotChannelFile, const QString &plotSizeFile)
 {
     QString pid      = QString::number(QCoreApplication::applicationPid());
-    QString initPath = QDir::tempPath() + "/rgui2_init_" + pid + ".R";
+    QString initPath = QDir::tempPath() + "/simpler_init_" + pid + ".R";
     QFile f(initPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
         return {};
 
     QTextStream out(&f);
     out << "invisible(local({\n"
-        << "  orig_prof <- Sys.getenv('RGUI2_ORIGINAL_R_PROFILE_USER')\n"
+        << "  orig_prof <- Sys.getenv('SIMPLER_ORIGINAL_R_PROFILE_USER')\n"
         << "  if (nzchar(orig_prof) && file.exists(orig_prof)) {\n"
         << "    source(orig_prof)\n"
         << "  } else {\n"
@@ -196,17 +196,17 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "    else if (file.exists(file.path(Sys.getenv('HOME'), '.Rprofile')))\n"
         << "      source(file.path(Sys.getenv('HOME'), '.Rprofile'))\n"
         << "  }\n"
-        << "  if (requireNamespace('rgui2', quietly=TRUE)) {\n"
-        << "    library(rgui2)\n"
-        << "    rgui2::init_monitor(Sys.getenv('RGUI2_ENV_FILE', unset='/tmp/rgui2_env.json'))\n"
-        << "    tryCatch(rgui2::init_help_pane(\n"
-        << "      port_file  = Sys.getenv('RGUI2_HELP_PORT_FILE',  unset='/tmp/rgui2_help_port'),\n"
-        << "      queue_file = Sys.getenv('RGUI2_HELP_QUEUE_FILE', unset='/tmp/rgui2_help_queue'),\n"
-        << "      url_file   = Sys.getenv('RGUI2_HELP_URL_FILE',   unset='/tmp/rgui2_help_url')\n"
+        << "  if (requireNamespace('simplerapi', quietly=TRUE)) {\n"
+        << "    library(simplerapi)\n"
+        << "    simplerapi::init_monitor(Sys.getenv('SIMPLER_ENV_FILE', unset='/tmp/simpler_env.json'))\n"
+        << "    tryCatch(simplerapi::init_help_pane(\n"
+        << "      port_file  = Sys.getenv('SIMPLER_HELP_PORT_FILE',  unset='/tmp/simpler_help_port'),\n"
+        << "      queue_file = Sys.getenv('SIMPLER_HELP_QUEUE_FILE', unset='/tmp/simpler_help_queue'),\n"
+        << "      url_file   = Sys.getenv('SIMPLER_HELP_URL_FILE',   unset='/tmp/simpler_help_url')\n"
         << "    ), error = function(e) NULL)\n"
-        << "    tryCatch(rgui2::init_plot_capture(\n"
-        << "      Sys.getenv('RGUI2_PLOT_PORT_FILE', unset=file.path(tempdir(), 'rgui2_plot_port')),\n"
-        << "      Sys.getenv('RGUI2_PLOT_SIZE_FILE', unset=file.path(tempdir(), 'rgui2_plot_size'))\n"
+        << "    tryCatch(simplerapi::init_plot_capture(\n"
+        << "      Sys.getenv('SIMPLER_PLOT_PORT_FILE', unset=file.path(tempdir(), 'simpler_plot_port')),\n"
+        << "      Sys.getenv('SIMPLER_PLOT_SIZE_FILE', unset=file.path(tempdir(), 'simpler_plot_size'))\n"
         << "    ), error = function(e) NULL)\n"
         << "  }\n"
         << "}))\n";
@@ -214,11 +214,11 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
 
     QString origProf = sysEnv.value("R_PROFILE_USER");
     if (!origProf.isEmpty())
-        env << "RGUI2_ORIGINAL_R_PROFILE_USER=" + origProf;
+        env << "SIMPLER_ORIGINAL_R_PROFILE_USER=" + origProf;
     env << "R_PROFILE_USER=" + initPath;
-    env << "RGUI2_ENV_FILE=" + QDir::tempPath() + "/rgui2_env.json";
-    env << "RGUI2_PLOT_PORT_FILE=" + plotChannelFile;
-    env << "RGUI2_PLOT_SIZE_FILE=" + plotSizeFile;
+    env << "SIMPLER_ENV_FILE=" + QDir::tempPath() + "/simpler_env.json";
+    env << "SIMPLER_PLOT_PORT_FILE=" + plotChannelFile;
+    env << "SIMPLER_PLOT_SIZE_FILE=" + plotSizeFile;
     return initPath;
 }
 
@@ -273,25 +273,25 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
 
     // ── Build child environment ─────────────────────────────────────────────
     QProcessEnvironment sysEnv = QProcessEnvironment::systemEnvironment();
-    QString plotChannelFile = QDir::tempPath() + "/rgui2_plot_port";
-    QString plotSizeFile = QDir::tempPath() + "/rgui2_plot_size";
+    QString plotChannelFile = QDir::tempPath() + "/simpler_plot_port";
+    QString plotSizeFile = QDir::tempPath() + "/simpler_plot_size";
 
 #ifdef Q_OS_WIN
     // On Windows the child inherits the parent's environment via CreateProcess.
     // We set needed variables directly in the parent before spawning.
     {
         QString tmpDir = QDir::tempPath();
-        SetEnvironmentVariableW(L"RGUI2_ENV_FILE",
-            (tmpDir + "/rgui2_env.json").toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_HELP_PORT_FILE",
-            (tmpDir + "/rgui2_help_port").toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_HELP_QUEUE_FILE",
-            (tmpDir + "/rgui2_help_queue").toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_HELP_URL_FILE",
-            (tmpDir + "/rgui2_help_url").toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_PLOT_PORT_FILE",
+        SetEnvironmentVariableW(L"SIMPLER_ENV_FILE",
+            (tmpDir + "/simpler_env.json").toStdWString().c_str());
+        SetEnvironmentVariableW(L"SIMPLER_HELP_PORT_FILE",
+            (tmpDir + "/simpler_help_port").toStdWString().c_str());
+        SetEnvironmentVariableW(L"SIMPLER_HELP_QUEUE_FILE",
+            (tmpDir + "/simpler_help_queue").toStdWString().c_str());
+        SetEnvironmentVariableW(L"SIMPLER_HELP_URL_FILE",
+            (tmpDir + "/simpler_help_url").toStdWString().c_str());
+        SetEnvironmentVariableW(L"SIMPLER_PLOT_PORT_FILE",
             plotChannelFile.toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_PLOT_SIZE_FILE",
+        SetEnvironmentVariableW(L"SIMPLER_PLOT_SIZE_FILE",
             plotSizeFile.toStdWString().c_str());
     }
     {
@@ -302,7 +302,7 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
             if (!initPath.isEmpty()) {
                 QString orig = sysEnv.value("R_PROFILE_USER");
                 if (!orig.isEmpty())
-                    SetEnvironmentVariableW(L"RGUI2_ORIGINAL_R_PROFILE_USER",
+                    SetEnvironmentVariableW(L"SIMPLER_ORIGINAL_R_PROFILE_USER",
                                             orig.toStdWString().c_str());
                 SetEnvironmentVariableW(L"R_PROFILE_USER",
                                         initPath.toStdWString().c_str());
@@ -704,7 +704,7 @@ void TerminalWidget::sendOutput(const QByteArray &data)
 
     QString output = m_decoder(visibleData);
     static const QRegularExpression internalSource(
-        QStringLiteral(R"(>?\s*source\('/tmp/rgui2_cmd_[0-9]+\.R', echo=FALSE, print\.eval=FALSE, local=FALSE\))"));
+        QStringLiteral(R"(>?\s*source\('/tmp/simpler_cmd_[0-9]+\.R', echo=FALSE, print\.eval=FALSE, local=FALSE\))"));
     output.replace(internalSource, QString());
     if (output.isEmpty())
         return;
@@ -1078,7 +1078,7 @@ void TerminalWidget::executeCommandSilent(const QString &command)
     if (command.isEmpty())
         return;
     QString pid     = QString::number(QCoreApplication::applicationPid());
-    QString tmpPath = QDir::tempPath() + "/rgui2_cmd_" + pid + ".R";
+    QString tmpPath = QDir::tempPath() + "/simpler_cmd_" + pid + ".R";
     QFile f(tmpPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
         writeToPtySilent((command + "\r").toUtf8());

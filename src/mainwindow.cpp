@@ -35,7 +35,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , console(nullptr)
 {
-    setWindowTitle("R GUI 2");
+    setWindowTitle("Simpler");
     resize(1200, 800);
 
     // ── Editor tabs (center-top) ────────────────────────────────────────────
@@ -73,9 +73,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     // ── Right: tabbed pane (Help / Environment / Plots) ──────────────────────
     QString plotChannelFile = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                          .filePath("rgui2_plot_port");
+                          .filePath("simpler_plot_port");
     QString plotSizeFile = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                          .filePath("rgui2_plot_size");
+                          .filePath("simpler_plot_size");
     envPane  = new EnvironmentPane(console, this);
     plotPane = new PlotPane(plotChannelFile, plotSizeFile, this);
     helpPane = new HelpPane(console, this);
@@ -382,7 +382,7 @@ void MainWindow::setupConnections()
 
 void MainWindow::loadSettings()
 {
-    QSettings settings("RGUI2", "RGUI2");
+    QSettings settings("Simpler", "Simpler");
     restoreGeometry(settings.value("geometry").toByteArray());
 
     m_suggestionsEnabled = settings.value("suggestionsEnabled", true).toBool();
@@ -432,7 +432,7 @@ void MainWindow::loadSettings()
 
 void MainWindow::saveSettings()
 {
-    QSettings settings("RGUI2", "RGUI2");
+    QSettings settings("Simpler", "Simpler");
     settings.setValue("geometry",           saveGeometry());
     settings.setValue("outerSplitter",      m_outerSplitter->saveState());
     settings.setValue("centerSplitter",     m_centerSplitter->saveState());
@@ -451,7 +451,7 @@ CodeEditor* MainWindow::getCurrentEditor()
 void MainWindow::about()
 {
     QMessageBox::about(this, "About",
-                      "R GUI 2\n\n"
+                      "Simpler\n\n"
                       "A Qt-based software to ease using R.\n\n"
                       "Released under the Apache 2.0 License.");
 }
@@ -644,7 +644,6 @@ void MainWindow::saveFile()
         out << editor->toPlainText();
         file.close();
         editor->document()->setModified(false);
-        statusBar()->showMessage(tr("File saved: %1").arg(filePath), 3000);
     }
 }
 
@@ -703,7 +702,6 @@ void MainWindow::saveFileAs()
             editor->setProperty("filePath", fileName);
             editor->document()->setModified(false);
             editorTabs->setTabText(editorTabs->currentIndex(), QFileInfo(fileName).fileName());
-            statusBar()->showMessage(tr("File saved: %1").arg(fileName), 3000);
         }
     }
 }
@@ -992,7 +990,7 @@ void MainWindow::adjustAllTerminalFontSize(int delta)
     }
 
     // Persist immediately so the size survives across sessions.
-    QSettings settings("RGUI2", "RGUI2");
+    QSettings settings("Simpler", "Simpler");
     settings.setValue("globalFontSize", m_globalFontSize);
 }
 

@@ -1,4 +1,4 @@
-// rgui2.rc — Windows resource file
+// simpler.rc — Windows resource file
 // Embeds the application icon so it appears in the taskbar,
 // title bar, and Windows Explorer file browser.
-IDI_ICON1 ICON "r-gui-2.ico"
+IDI_ICON1 ICON "simpler.ico"

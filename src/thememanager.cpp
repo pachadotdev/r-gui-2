@@ -26,7 +26,7 @@ ThemeManager::ThemeManager()
     scanJsonThemes();
     
     // Load saved theme from settings
-    QSettings settings("RGUI2", "RGUI2");
+    QSettings settings("Simpler", "Simpler");
     QString savedTheme = settings.value("theme").toString();
     QString savedFont = settings.value("monospaceFont").toString();
     if (!savedFont.isEmpty() && availableMonospaceFonts().contains(savedFont))
@@ -128,7 +128,7 @@ void ThemeManager::setMonospaceFont(const QString &family)
         return;
 
     monospaceFontName = family;
-    QSettings settings("RGUI2", "RGUI2");
+    QSettings settings("Simpler", "Simpler");
     settings.setValue("monospaceFont", family);
 }
 
@@ -182,7 +182,7 @@ void ThemeManager::setCurrentTheme(const QString &name)
         applyTheme(theme);
         
         // Save to settings
-        QSettings settings("RGUI2", "RGUI2");
+        QSettings settings("Simpler", "Simpler");
         settings.setValue("theme", name);
     }
 }

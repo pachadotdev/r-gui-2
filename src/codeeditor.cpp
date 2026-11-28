@@ -550,7 +550,7 @@ QStringList CodeEditor::getFunctionArgNames(const QString &funcName, const QStri
 QStringList CodeEditor::getSessionVariables() const
 {
     QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QString envFilePath = QDir(tempDir).filePath("rgui2_env.json");
+    QString envFilePath = QDir(tempDir).filePath("simpler_env.json");
 
     QFile file(envFilePath);
     if (!file.open(QIODevice::ReadOnly))
@@ -579,7 +579,7 @@ QStringList CodeEditor::getObjectMembers(const QString &objectName) const
         return {};
 
     const QString envFilePath = QDir(QStandardPaths::writableLocation(
-        QStandardPaths::TempLocation)).filePath("rgui2_env.json");
+        QStandardPaths::TempLocation)).filePath("simpler_env.json");
     QFile file(envFilePath);
     if (!file.open(QIODevice::ReadOnly))
         return {};
@@ -686,9 +686,9 @@ QSet<QString> CodeEditor::getLoadedPackages() const
         }
     }
 
-    // 2. Check rgui2_env.json for session packages if saved
+    // 2. Check simpler_env.json for session packages if saved
     QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QString envFilePath = QDir(tempDir).filePath("rgui2_env.json");
+    QString envFilePath = QDir(tempDir).filePath("simpler_env.json");
     QFile file(envFilePath);
     if (file.open(QIODevice::ReadOnly)) {
         QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
