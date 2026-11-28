@@ -9,7 +9,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Find Qt6
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Network WebEngineWidgets WebChannel)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Network)
 
 # Find R
 find_program(R_EXECUTABLE R)
@@ -43,8 +43,10 @@ set(SOURCES
     src/thememanager.cpp
     src/thememanager.h
     src/terminalwidget.h
-    src/terminalwidget.cpp   # xterm.js-based, unified for all platforms
-    src/xterm.qrc            # bundles xterm.js, xterm.css, terminal.html
+    src/terminalwidget.cpp   # native QPainter terminal + PTY backend
+    src/vtscreen.h
+    src/vtscreen.cpp
+    src/fonts.qrc            # bundles the Hack monospace fonts
     src/environmentpane.cpp
     src/environmentpane.h
     src/plotpane.cpp
@@ -76,8 +78,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Widgets
     Qt6::Gui
     Qt6::Network
-    Qt6::WebEngineWidgets
-    Qt6::WebChannel
 )
 
 # Link platform PTY library (POSIX only)

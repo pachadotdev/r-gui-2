@@ -48,7 +48,7 @@ I provided an installer for Windows. You can download it [here](https://github.c
 *If you build on Ubuntu*: You will need to install extra dependencies
 
 ```bash
-sudo apt-get install qt6-webengine-dev qt6-base-dev
+sudo apt-get install qt6-base-dev
 ```
 
 ## Package

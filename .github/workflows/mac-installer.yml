@@ -19,8 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       # -- 2. Qt6 build environment ------------------------------------------
-      # brew install qt6 brings in the full Qt6 suite including WebEngine and
-      # WebChannel, which rgui2 requires.  R is pre-installed on macos-13 runners.
+      # Only Qt Base (Core/Gui/Widgets/Network) is needed; no WebEngine.
       - name: Set up Qt6 on macOS
         run: |
           brew install qt6

@@ -83,11 +83,13 @@ MainWindow::MainWindow(QWidget *parent)
     m_rightTabs->addTab(envPane,   tr("Environment"));
     m_rightTabs->addTab(helpPane,  tr("Help"));
 
-    // Plots live in their own lower pane so they stay visible next to the
-    // Environment / Help tabs.
+    // Plots get their own tab bar in the lower pane, styled like the others.
+    m_plotTabs = new QTabWidget(this);
+    m_plotTabs->addTab(plotPane, tr("Plots"));
+
     m_rightSplitter = new QSplitter(Qt::Vertical, this);
     m_rightSplitter->addWidget(m_rightTabs);
-    m_rightSplitter->addWidget(plotPane);
+    m_rightSplitter->addWidget(m_plotTabs);
     m_rightSplitter->setChildrenCollapsible(false);
     m_rightSplitter->setSizes({1, 1});
 
@@ -255,7 +257,7 @@ void MainWindow::createMenus()
     connect(fontResetAct, &QAction::triggered, this, [this]() { adjustAllTerminalFontSize(0); });
     viewMenu->addAction(fontResetAct);
 
-    // Application-level shortcuts so they fire before QWebEngineView consumes them.
+    // Application-level shortcuts so they fire before the focused terminal consumes them.
     // Ctrl++ needs both Key_Plus (Shift+=) and Key_Equal (plain =) covered.
     auto makeFontSC = [this](const QKeySequence &ks, int delta) {
         auto *sc = new QShortcut(ks, this);
@@ -976,20 +978,11 @@ void MainWindow::adjustAllTerminalFontSize(int delta)
     else
         m_globalFontSize = qBound(6, m_globalFontSize + delta, 32);
 
-    // ── Terminals (xterm.js) ──────────────────────────────────────────────
-    // Use the absolute setter so every terminal lands on the *same* size.
-    // Fall back to reset + delta for older terminal.html that lacks setFontSize.
-    const int target = m_globalFontSize;
-    const QString js = QString(
-        "if (window.setFontSize) {"
-        "  window.setFontSize(%1);"
-        "} else if (window.resetFontSize && window.adjustFontSize) {"
-        "  window.resetFontSize();"
-        "  window.adjustFontSize(%1 - 11);"
-        "}").arg(target);
+    // ── Terminals ─────────────────────────────────────────────────────────
+    // Absolute setter so every terminal lands on the same size.
     for (int i = 0; i < consoleTabs->count(); ++i) {
         if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
-            tw->page()->runJavaScript(js);
+            tw->setInitialFontSize(m_globalFontSize);
     }
 
     // ── Script editors ────────────────────────────────────────────────────

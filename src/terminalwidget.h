@@ -2,38 +2,15 @@
 #define TERMINALWIDGET_H
 
 #include "thememanager.h"
-#include <QWebEngineView>
-#include <QWebChannel>
+#include "vtscreen.h"
+#include <QAbstractScrollArea>
+#include <QFont>
+#include <QStringDecoder>
 #include <QTimer>
 
-// Forward declaration so TerminalBridge can hold a pointer before TerminalWidget is defined.
-class TerminalWidget;
-
-// JS ↔ C++ bridge exposed to xterm.js via QWebChannel.
-// JS calls ready() / sendInput(); C++ emits outputReady / themeChanged.
-class TerminalBridge : public QObject
-{
-    Q_OBJECT
-public:
-    explicit TerminalBridge(QObject *parent = nullptr) : QObject(parent) {}
-
-    Q_INVOKABLE void ready();                    // JS signals it is initialised
-    Q_INVOKABLE void sendInput(const QString &data); // key/paste data from xterm.js
-    Q_INVOKABLE void resizePty(int cols, int rows);  // JS reports actual terminal size
-    Q_INVOKABLE void fontSizeUp();    // Ctrl++ inside xterm.js
-    Q_INVOKABLE void fontSizeDown();  // Ctrl+- inside xterm.js
-    Q_INVOKABLE void fontSizeReset(); // Ctrl+0 inside xterm.js
-
-signals:
-    void outputReady(const QString &b64data);    // base64-encoded PTY output
-    void themeChanged(const QString &bg, const QString &fg, const QString &cursor);
-
-private:
-    friend class TerminalWidget;
-    TerminalWidget *tw = nullptr;
-};
-
-class TerminalWidget : public QWebEngineView
+// Native terminal: PTY backend (forkpty / ConPTY) + VtScreen emulator,
+// painted with QPainter. No embedded browser.
+class TerminalWidget : public QAbstractScrollArea
 {
     Q_OBJECT
 
@@ -49,45 +26,68 @@ public:
     void executeCommand(const QString &command);
     void executeCommandSilent(const QString &command);
     void executeRCode(const QString &code);
-    // Apply a font size as soon as the page is ready (deferred if still loading).
     void setInitialFontSize(int pt);
-    // Set the working directory for new PTY sessions (must be called before the page loads).
+    // Set the working directory for new PTY sessions (must be called before the PTY starts).
     void setWorkingDirectory(const QString &dir) { m_workingDir = dir; }
 
 signals:
-    void fontSizeAdjustRequested(int delta);  // emitted when Ctrl+/- pressed inside terminal
+    void fontSizeAdjustRequested(int delta);  // Ctrl+wheel / Ctrl+/- inside the terminal
 
 protected:
-    void contextMenuEvent(QContextMenuEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void inputMethodEvent(QInputMethodEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
+    void focusInEvent(QFocusEvent *event) override;
+    void focusOutEvent(QFocusEvent *event) override;
+    bool focusNextPrevChild(bool next) override;
 
 private:
-    friend class TerminalBridge;
-
     QString     shellPath;
-    QString     m_workingDir;     // initial working directory for the PTY child
+    QString     m_workingDir;
     QStringList shellArgs;
     QStringList envList;          // POSIX child environment (unused on Windows)
     EditorTheme currentTheme;
-    TerminalBridge *bridge  = nullptr;
-    QWebChannel    *channel = nullptr;
-    bool ptyStarted = false;
-    bool pageLoaded = false;
+    bool  ptyStarted = false;
     bool  suppressInternalOutput = false;
     bool  suppressInternalPrompt = false;
     QByteArray internalOutputBuffer;
     QByteArray internalOutputMarker;
-    int  pendingFontSize = 0;   // 0 = none pending
-    QTimer *fitTimer = nullptr;
+
+    VtScreen       m_screen;
+    QStringDecoder m_decoder{QStringConverter::Utf8};
+    QFont m_font;
+    int   m_cellW = 8, m_cellH = 16, m_ascent = 12;
+    int   m_cols = 80, m_rows = 24;
+    bool  m_stickToBottom = true;
+
+    // Selection in absolute (dropped-lines-adjusted) line coordinates.
+    bool    m_selecting = false;
+    bool    m_hasSelection = false;
+    QPoint  m_selAnchor, m_selHead;   // x = column, y = absolute line
 
     void startPty();
     void writeToPty(const QByteArray &data);
     void writeToPtySilent(const QByteArray &data);  // POSIX: written without local echo
-    void sendOutput(const QByteArray &data);   // queued-connected to reader thread
+    void sendOutput(const QByteArray &data);        // queued-connected to reader thread
     void doResize(int cols, int rows);
-    void onPtyReaderFinished();                // auto-restart R when the process exits
+    void onPtyReaderFinished();                     // auto-restart R when the process exits
 
-    class PtyReaderThread *ptyReader = nullptr;  // tracked on all platforms
+    void updateFontMetrics();
+    void updateGrid();
+    void updateScrollBar();
+    QColor paletteColor(qint32 code, bool isFg) const;
+    QPoint cellAt(const QPoint &pos) const;
+    QString selectedText() const;
+    void clearSelection();
+    void showMessage(const QString &text, int ansiColor);
+
+    class PtyReaderThread *ptyReader = nullptr;
 
 #ifdef Q_OS_WIN
     struct ConPtyImpl;
