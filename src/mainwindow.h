@@ -41,6 +41,7 @@ private slots:
 private:
     void createMenus();
     void setupConnections();
+    void openSystemTerminal();
     void loadSettings();
     void saveSettings();
     void closeEvent(QCloseEvent *event) override;
@@ -53,6 +54,8 @@ private:
 
     // Right-panel tab widget (Help / Environment / Plots)
     QTabWidget *m_rightTabs = nullptr;
+    QTabWidget *m_plotTabs  = nullptr;
+    QSplitter  *m_rightSplitter = nullptr;  // vertical: Environment/Help over Plots
 
     // Splitters
     QSplitter  *m_outerSplitter  = nullptr;  // horizontal: files | editor+console | right

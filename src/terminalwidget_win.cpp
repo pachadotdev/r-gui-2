@@ -244,12 +244,12 @@ void TerminalWidget::startPty(const QString &shell, const QStringList &args)
     QString baseName = QFileInfo(shell).baseName().toLower();
     if (baseName == "r" || baseName == "rterm") {
         QString initPath = QDir::tempPath()
-            + QString("/rgui2_init_%1.R").arg(QCoreApplication::applicationPid());
+            + QString("/simpler_init_%1.R").arg(QCoreApplication::applicationPid());
         QFile f(initPath);
         if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
             QTextStream out(&f);
             out << "local({\n"
-                << "  orig_prof <- Sys.getenv('RGUI2_ORIGINAL_R_PROFILE_USER')\n"
+                << "  orig_prof <- Sys.getenv('SIMPLER_ORIGINAL_R_PROFILE_USER')\n"
                 << "  if (nzchar(orig_prof) && file.exists(orig_prof)) {\n"
                 << "    source(orig_prof)\n"
                 << "  } else {\n"
@@ -257,16 +257,16 @@ void TerminalWidget::startPty(const QString &shell, const QStringList &args)
                 << "    else if (file.exists(file.path(Sys.getenv('USERPROFILE'), '.Rprofile')))\n"
                 << "      source(file.path(Sys.getenv('USERPROFILE'), '.Rprofile'))\n"
                 << "  }\n"
-                << "  if (requireNamespace('rgui2', quietly=TRUE)) {\n"
-                << "    library(rgui2)\n"
-                << "    rgui2::init_monitor(file.path(tempdir(), 'rgui2_env.json'))\n"
+                << "  if (requireNamespace('simplerapi', quietly=TRUE)) {\n"
+                << "    library(simplerapi)\n"
+                << "    simplerapi::init_monitor(file.path(tempdir(), 'simpler_env.json'))\n"
                 << "  }\n"
                 << "})\n";
             f.close();
 
             QString origProf = QString::fromLocal8Bit(qgetenv("R_PROFILE_USER"));
             if (!origProf.isEmpty())
-                SetEnvironmentVariableW(L"RGUI2_ORIGINAL_R_PROFILE_USER",
+                SetEnvironmentVariableW(L"SIMPLER_ORIGINAL_R_PROFILE_USER",
                                         origProf.toStdWString().c_str());
             SetEnvironmentVariableW(L"R_PROFILE_USER",
                                     initPath.toStdWString().c_str());

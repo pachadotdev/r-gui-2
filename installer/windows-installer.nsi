@@ -1,5 +1,5 @@
 ; ============================================================
-; R GUI 2 – Windows NSIS Installer Script
+; Simpler – Windows NSIS Installer Script
 ; Build with:
 ;   makensis /DAPP_VERSION=1.2.3 windows-installer.nsi
 ; ============================================================
@@ -8,15 +8,15 @@
   !define APP_VERSION "1.0.0"
 !endif
 
-!define APP_NAME        "R GUI 2"
-!define APP_EXE         "rgui2.exe"
-!define APP_PUBLISHER   "R GUI 2"
-!define REG_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\R-GUI-2"
-!define REG_APP_KEY     "Software\R-GUI-2"
+!define APP_NAME        "Simpler"
+!define APP_EXE         "simpler.exe"
+!define APP_PUBLISHER   "Simpler"
+!define REG_UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\Simpler"
+!define REG_APP_KEY     "Software\Simpler"
 
 Name          "${APP_NAME} ${APP_VERSION}"
-OutFile       "R-GUI-2-${APP_VERSION}-Setup.exe"
-InstallDir    "$PROGRAMFILES64\R GUI 2"
+OutFile       "Simpler-${APP_VERSION}-Setup.exe"
+InstallDir    "$PROGRAMFILES64\Simpler"
 InstallDirRegKey HKLM "${REG_APP_KEY}" "InstallLocation"
 RequestExecutionLevel admin
 Unicode True
@@ -30,15 +30,15 @@ Unicode True
 Var Rscript
 
 !define MUI_ABORTWARNING
-!define MUI_ICON   "r-gui-2.ico"
-!define MUI_UNICON "r-gui-2.ico"
+!define MUI_ICON   "simpler.ico"
+!define MUI_UNICON "simpler.ico"
 !define MUI_WELCOMEPAGE_TEXT \
   "This wizard will install ${APP_NAME} ${APP_VERSION} on your computer.$\r$\n$\r$\n\
-   R GUI 2 is a lightweight Qt-based IDE for the R programming language.$\r$\n$\r$\n\
-   This installer bundles the rgui2 R package. An existing R installation is required.$\r$\n$\r$\n\
+   Simpler is a lightweight Qt-based IDE for the R programming language.$\r$\n$\r$\n\
+   This installer bundles the simplerapi R package. An existing R installation is required.$\r$\n$\r$\n\
    Click Next to continue."
 !define MUI_FINISHPAGE_RUN         "$INSTDIR\${APP_EXE}"
-!define MUI_FINISHPAGE_RUN_TEXT    "Launch R GUI 2"
+!define MUI_FINISHPAGE_RUN_TEXT    "Launch Simpler"
 
 ; -- Installer pages -----------------------------------------------------------
 !insertmacro MUI_PAGE_WELCOME
@@ -65,7 +65,7 @@ VIAddVersionKey "LegalCopyright"  "(c) ${APP_PUBLISHER}"
 ; ===============================================================================
 ; Main install section
 ; ===============================================================================
-Section "R GUI 2 (required)" SecMain
+Section "Simpler (required)" SecMain
   SectionIn RO   ; cannot be deselected
 
   ; ── Visual C++ Redistributable (VCRUNTIME140 / MSVCP140) ───────────────────
@@ -90,19 +90,19 @@ Section "R GUI 2 (required)" SecMain
   SetOutPath "$INSTDIR\fonts"
   File /r "staging\fonts\*.*"
 
-  ; -- rgui2 R companion package source (for post-install R setup) ----------
-  SetOutPath "$INSTDIR\rgui2pkg"
-  File /r "staging\rgui2pkg\*.*"
+  ; -- simplerapi R companion package source (for post-install R setup) ----------
+  SetOutPath "$INSTDIR\simplerapi"
+  File /r "staging\simplerapi\*.*"
 
-  ; -- rgui2 pre-built package tarball ---------------------------------------
+  ; -- simplerapi pre-built package tarball ---------------------------------------
   SetOutPath "$INSTDIR"
-  File "staging\rgui2pkg.tar.gz"
+  File "staging\simplerapi.tar.gz"
 
   ; -- Shortcuts ------------------------------------------------------------
-  CreateDirectory "$SMPROGRAMS\R GUI 2"
-  CreateShortcut  "$SMPROGRAMS\R GUI 2\R GUI 2.lnk"           "$INSTDIR\${APP_EXE}"
-  CreateShortcut  "$SMPROGRAMS\R GUI 2\Uninstall R GUI 2.lnk" "$INSTDIR\uninstall.exe"
-  CreateShortcut  "$DESKTOP\R GUI 2.lnk"                      "$INSTDIR\${APP_EXE}"
+  CreateDirectory "$SMPROGRAMS\Simpler"
+  CreateShortcut  "$SMPROGRAMS\Simpler\Simpler.lnk"           "$INSTDIR\${APP_EXE}"
+  CreateShortcut  "$SMPROGRAMS\Simpler\Uninstall Simpler.lnk" "$INSTDIR\uninstall.exe"
+  CreateShortcut  "$DESKTOP\Simpler.lnk"                      "$INSTDIR\${APP_EXE}"
 
   ; -- Registry (Add/Remove Programs) --------------------------------------
   WriteRegStr   HKLM "${REG_APP_KEY}"    "InstallLocation"   "$INSTDIR"
@@ -123,9 +123,9 @@ Section "R GUI 2 (required)" SecMain
 SectionEnd
 
 ; ===============================================================================
-; Pre-built R packages (jsonlite + rgui2) — requires an existing R installation
+; Pre-built R packages (jsonlite + simplerapi) — requires an existing R installation
 ; ===============================================================================
-Section "rgui2 R package (requires existing R installation)" SecRPkg
+Section "simplerapi R package (requires existing R installation)" SecRPkg
 
   ; Detect R in both registry views. The official installer writes the R64
   ; key, but its view depends on the installer architecture and Windows
@@ -185,7 +185,7 @@ Section "rgui2 R package (requires existing R installation)" SecRPkg
       "No existing R installation was found. Please install R from https://cran.r-project.org, then re-run this installer to copy the bundled R packages."
   ${Else}
     DetailPrint "Found R installation at $0"
-    DetailPrint "Copying R packages and Cairo graphics support..."
+    DetailPrint "Copying R packages..."
     SetOutPath "$0\library"
     File /r "staging\R-library\*"
   ${EndIf}
@@ -201,8 +201,8 @@ Section "Uninstall"
   RMDir /r "$INSTDIR"
 
   ; Remove shortcuts
-  Delete    "$DESKTOP\R GUI 2.lnk"
-  RMDir /r  "$SMPROGRAMS\R GUI 2"
+  Delete    "$DESKTOP\Simpler.lnk"
+  RMDir /r  "$SMPROGRAMS\Simpler"
 
   ; Remove registry entries
   DeleteRegKey HKLM "${REG_UNINST_KEY}"
@@ -212,6 +212,6 @@ SectionEnd
 
 ; -- Section descriptions (shown on the components page) -----------------------
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}    "R GUI 2 application files (required)."
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecRPkg}    "Copies jsonlite and rgui2 R packages into your existing R installation."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}    "Simpler application files (required)."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecRPkg}    "Copies jsonlite and simplerapi R packages into your existing R installation."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END

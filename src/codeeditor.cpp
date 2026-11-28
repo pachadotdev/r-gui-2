@@ -550,7 +550,7 @@ QStringList CodeEditor::getFunctionArgNames(const QString &funcName, const QStri
 QStringList CodeEditor::getSessionVariables() const
 {
     QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QString envFilePath = QDir(tempDir).filePath("rgui2_env.json");
+    QString envFilePath = QDir(tempDir).filePath("simpler_env.json");
 
     QFile file(envFilePath);
     if (!file.open(QIODevice::ReadOnly))
@@ -579,7 +579,7 @@ QStringList CodeEditor::getObjectMembers(const QString &objectName) const
         return {};
 
     const QString envFilePath = QDir(QStandardPaths::writableLocation(
-        QStandardPaths::TempLocation)).filePath("rgui2_env.json");
+        QStandardPaths::TempLocation)).filePath("simpler_env.json");
     QFile file(envFilePath);
     if (!file.open(QIODevice::ReadOnly))
         return {};
@@ -686,9 +686,9 @@ QSet<QString> CodeEditor::getLoadedPackages() const
         }
     }
 
-    // 2. Check rgui2_env.json for session packages if saved
+    // 2. Check simpler_env.json for session packages if saved
     QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QString envFilePath = QDir(tempDir).filePath("rgui2_env.json");
+    QString envFilePath = QDir(tempDir).filePath("simpler_env.json");
     QFile file(envFilePath);
     if (file.open(QIODevice::ReadOnly)) {
         QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
@@ -733,10 +733,10 @@ void CodeEditor::updateCompleterModel(bool packageContextOnly, const QString &pk
     } else if (m_currentLanguage == RSyntaxHighlighter::Language::CPP) {
         for (const QString &w : getBuiltinCPPCompletions()) items.insert(w);
         for (const QString &w : getDocumentWords()) items.insert(w);
+        items.remove(textUnderCursor());
     } else {
         for (const QString &w : getBuiltinRCompletions()) items.insert(w);
         for (const QString &w : getSessionVariables()) items.insert(w);
-        for (const QString &w : getDocumentWords()) items.insert(w);
         for (const QString &pkg : getLoadedPackages()) {
             for (const QString &exportedSym : getPackageExports(pkg)) {
                 items.insert(exportedSym);
@@ -1072,7 +1072,11 @@ void CodeEditor::keyPressEvent(QKeyEvent *e)
         m_completer->popup()->setCurrentIndex(m_completer->completionModel()->index(0, 0));
     }
 
-    if (m_completer->completionCount() > 0) {
+    // Nothing to suggest when the only match is what has already been typed.
+    const bool onlyExactMatch = m_completer->completionCount() == 1
+        && m_completer->currentCompletion().compare(completionPrefix, Qt::CaseSensitive) == 0;
+
+    if (m_completer->completionCount() > 0 && !onlyExactMatch) {
         QRect cr = cursorRect();
         cr.setWidth(m_completer->popup()->sizeHintForColumn(0)
                     + m_completer->popup()->verticalScrollBar()->sizeHint().width() + 20);

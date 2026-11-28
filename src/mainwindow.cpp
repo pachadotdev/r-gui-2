@@ -18,6 +18,7 @@
 #include <QMenu>
 #include <QFileInfo>
 #include <QTimer>
+#include <QProcess>
 #include <QStandardPaths>
 #include <QDir>
 #include <QSplitter>
@@ -35,7 +36,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , console(nullptr)
 {
-    setWindowTitle("R GUI 2");
+    setWindowTitle("Simpler");
     resize(1200, 800);
 
     // ── Editor tabs (center-top) ────────────────────────────────────────────
@@ -73,31 +74,31 @@ MainWindow::MainWindow(QWidget *parent)
 
     // ── Right: tabbed pane (Help / Environment / Plots) ──────────────────────
     QString plotChannelFile = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                          .filePath("rgui2_plot_port");
+                          .filePath("simpler_plot_port");
     QString plotSizeFile = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                          .filePath("rgui2_plot_size");
+                          .filePath("simpler_plot_size");
     envPane  = new EnvironmentPane(console, this);
     plotPane = new PlotPane(plotChannelFile, plotSizeFile, this);
     helpPane = new HelpPane(console, this);
     m_rightTabs = new QTabWidget(this);
     m_rightTabs->addTab(envPane,   tr("Environment"));
-    m_rightTabs->addTab(plotPane,  tr("Plots"));
     m_rightTabs->addTab(helpPane,  tr("Help"));
 
-    // Auto-switch to the Plots tab whenever a new/updated plot arrives, so
-    // running plotting code always brings the result into view.
-    connect(plotPane, &PlotPane::plotUpdated, this, [this]() {
-        // Do not steal focus from the Environment pane while a command such
-        // as `x <- 1` refreshes the R session. Plot-producing commands still
-        // switch to Plots when another right-hand pane is active.
-        if (m_rightTabs->currentWidget() != envPane)
-            m_rightTabs->setCurrentWidget(plotPane);
-    });
+    // Plots get their own tab bar in the lower pane, styled like the others.
+    m_plotTabs = new QTabWidget(this);
+    m_plotTabs->addTab(plotPane, tr("Plots"));
+
+    m_rightSplitter = new QSplitter(Qt::Vertical, this);
+    m_rightSplitter->addWidget(m_rightTabs);
+    m_rightSplitter->addWidget(m_plotTabs);
+    m_rightSplitter->setChildrenCollapsible(false);
+    m_rightSplitter->setSizes({1, 1});
+
     // ── Outer horizontal splitter (left | center | right) ────────────────────
     m_outerSplitter = new QSplitter(Qt::Horizontal, this);
     m_outerSplitter->addWidget(fileBrowser);
     m_outerSplitter->addWidget(m_centerSplitter);
-    m_outerSplitter->addWidget(m_rightTabs);
+    m_outerSplitter->addWidget(m_rightSplitter);
     m_outerSplitter->setChildrenCollapsible(false);
 
     setCentralWidget(m_outerSplitter);
@@ -257,7 +258,7 @@ void MainWindow::createMenus()
     connect(fontResetAct, &QAction::triggered, this, [this]() { adjustAllTerminalFontSize(0); });
     viewMenu->addAction(fontResetAct);
 
-    // Application-level shortcuts so they fire before QWebEngineView consumes them.
+    // Application-level shortcuts so they fire before the focused terminal consumes them.
     // Ctrl++ needs both Key_Plus (Shift+=) and Key_Equal (plain =) covered.
     auto makeFontSC = [this](const QKeySequence &ks, int delta) {
         auto *sc = new QShortcut(ks, this);
@@ -269,49 +270,61 @@ void MainWindow::createMenus()
     makeFontSC(QKeySequence(Qt::CTRL | Qt::Key_Minus),  -1);
     makeFontSC(QKeySequence(Qt::CTRL | Qt::Key_0),       0);
     QMenu *terminalMenuBar = menuBar()->addMenu(tr("&Terminal"));
-    struct ShellEntry { QString path; QString label; };
-    QList<ShellEntry> shellCandidates = {
-        {"/bin/zsh",                                                  "zsh"},
-        {"/usr/bin/zsh",                                              "zsh"},
-        {"/bin/bash",                                                 "bash"},
-        {"/usr/bin/bash",                                             "bash"},
-        {"/bin/sh",                                                   "sh"},
-        {"/usr/bin/sh",                                               "sh"},
-        {"/usr/bin/fish",                                             "fish"},
-        {"/bin/fish",                                                 "fish"},
-        {"/opt/homebrew/bin/zsh",                                     "zsh"},
-        {"/usr/local/bin/zsh",                                        "zsh"},
-        {"/usr/bin/pwsh",                                             "PowerShell"},
-        {"/usr/local/bin/pwsh",                                       "PowerShell"},
-        {"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", "PowerShell"},
-        {"C:/Program Files/PowerShell/7/pwsh.exe",                   "PowerShell"},
-        {"C:/msys64/usr/bin/bash.exe",                                "MSYS2 bash"},
-        {"C:/msys64/mingw64/bin/bash.exe",                            "MSYS2 bash"},
-    };
-    QStringList addedLabels;
-    for (const ShellEntry &entry : shellCandidates) {
-        if (QFile::exists(entry.path) && !addedLabels.contains(entry.label)) {
-            QAction *shellAction = terminalMenuBar->addAction(tr("New %1 terminal").arg(entry.label));
-            connect(shellAction, &QAction::triggered, this, [this, entry]() {
-                TerminalWidget *terminal = new TerminalWidget(entry.path, this);
-                if (!m_currentDir.isEmpty())
-                    terminal->setWorkingDirectory(m_currentDir);
-                connect(terminal, &TerminalWidget::fontSizeAdjustRequested,
-                        this,     &MainWindow::adjustAllTerminalFontSize);
-                // Start this terminal at the current global font size.
-                terminal->setInitialFontSize(m_globalFontSize);
-                int index = consoleTabs->addTab(terminal, entry.label);
-                consoleTabs->setCurrentIndex(index);
-            });
-            addedLabels << entry.label;
-        }
-    }
+    QAction *openTermAct = terminalMenuBar->addAction(tr("Open System Terminal"));
+    connect(openTermAct, &QAction::triggered, this, &MainWindow::openSystemTerminal);
 
     // Help menu
     helpMenu = menuBar()->addMenu(tr("&Help"));
     QAction *aboutAct = new QAction(tr("&About"), this);
     connect(aboutAct, &QAction::triggered, this, &MainWindow::about);
     helpMenu->addAction(aboutAct);
+}
+
+void MainWindow::openSystemTerminal()
+{
+    const QString dir = m_currentDir.isEmpty() ? QDir::homePath() : m_currentDir;
+    bool started = false;
+
+#if defined(Q_OS_MACOS)
+    started = QProcess::startDetached("open", {"-a", "Terminal", dir});
+#elif defined(Q_OS_WIN)
+    if (!QStandardPaths::findExecutable("wt.exe").isEmpty())
+        started = QProcess::startDetached("wt.exe", {"-d", QDir::toNativeSeparators(dir)});
+    if (!started) {
+        QProcess p;
+        p.setProgram("cmd.exe");
+        p.setNativeArguments("/c start cmd.exe");
+        p.setWorkingDirectory(dir);
+        started = p.startDetached();
+    }
+#else
+    struct Term { QString exe; QStringList args; };
+    QList<Term> terms;
+    const QString envTerm = qEnvironmentVariable("TERMINAL");
+    if (!envTerm.isEmpty())
+        terms.append({envTerm, {}});
+    terms.append({
+        {"x-terminal-emulator", {}},
+        {"gnome-terminal", {"--working-directory=" + dir}},
+        {"konsole", {"--workdir", dir}},
+        {"xfce4-terminal", {"--working-directory=" + dir}},
+        {"kitty", {"--directory", dir}},
+        {"alacritty", {"--working-directory", dir}},
+        {"xterm", {}},
+    });
+    for (const Term &t : terms) {
+        if (QStandardPaths::findExecutable(t.exe).isEmpty())
+            continue;
+        if (QProcess::startDetached(t.exe, t.args, dir)) {
+            started = true;
+            break;
+        }
+    }
+#endif
+
+    if (!started)
+        QMessageBox::warning(this, tr("Open System Terminal"),
+                             tr("Could not find a terminal application to launch."));
 }
 
 void MainWindow::setupConnections()
@@ -382,7 +395,7 @@ void MainWindow::setupConnections()
 
 void MainWindow::loadSettings()
 {
-    QSettings settings("RGUI2", "RGUI2");
+    QSettings settings("Simpler", "Simpler");
     restoreGeometry(settings.value("geometry").toByteArray());
 
     m_suggestionsEnabled = settings.value("suggestionsEnabled", true).toBool();
@@ -432,7 +445,7 @@ void MainWindow::loadSettings()
 
 void MainWindow::saveSettings()
 {
-    QSettings settings("RGUI2", "RGUI2");
+    QSettings settings("Simpler", "Simpler");
     settings.setValue("geometry",           saveGeometry());
     settings.setValue("outerSplitter",      m_outerSplitter->saveState());
     settings.setValue("centerSplitter",     m_centerSplitter->saveState());
@@ -451,7 +464,7 @@ CodeEditor* MainWindow::getCurrentEditor()
 void MainWindow::about()
 {
     QMessageBox::about(this, "About",
-                      "R GUI 2\n\n"
+                      "Simpler\n\n"
                       "A Qt-based software to ease using R.\n\n"
                       "Released under the Apache 2.0 License.");
 }
@@ -644,7 +657,6 @@ void MainWindow::saveFile()
         out << editor->toPlainText();
         file.close();
         editor->document()->setModified(false);
-        statusBar()->showMessage(tr("File saved: %1").arg(filePath), 3000);
     }
 }
 
@@ -703,7 +715,6 @@ void MainWindow::saveFileAs()
             editor->setProperty("filePath", fileName);
             editor->document()->setModified(false);
             editorTabs->setTabText(editorTabs->currentIndex(), QFileInfo(fileName).fileName());
-            statusBar()->showMessage(tr("File saved: %1").arg(fileName), 3000);
         }
     }
 }
@@ -978,20 +989,11 @@ void MainWindow::adjustAllTerminalFontSize(int delta)
     else
         m_globalFontSize = qBound(6, m_globalFontSize + delta, 32);
 
-    // ── Terminals (xterm.js) ──────────────────────────────────────────────
-    // Use the absolute setter so every terminal lands on the *same* size.
-    // Fall back to reset + delta for older terminal.html that lacks setFontSize.
-    const int target = m_globalFontSize;
-    const QString js = QString(
-        "if (window.setFontSize) {"
-        "  window.setFontSize(%1);"
-        "} else if (window.resetFontSize && window.adjustFontSize) {"
-        "  window.resetFontSize();"
-        "  window.adjustFontSize(%1 - 11);"
-        "}").arg(target);
+    // ── Terminals ─────────────────────────────────────────────────────────
+    // Absolute setter so every terminal lands on the same size.
     for (int i = 0; i < consoleTabs->count(); ++i) {
         if (auto *tw = qobject_cast<TerminalWidget*>(consoleTabs->widget(i)))
-            tw->page()->runJavaScript(js);
+            tw->setInitialFontSize(m_globalFontSize);
     }
 
     // ── Script editors ────────────────────────────────────────────────────
@@ -1001,7 +1003,7 @@ void MainWindow::adjustAllTerminalFontSize(int delta)
     }
 
     // Persist immediately so the size survives across sessions.
-    QSettings settings("RGUI2", "RGUI2");
+    QSettings settings("Simpler", "Simpler");
     settings.setValue("globalFontSize", m_globalFontSize);
 }
 

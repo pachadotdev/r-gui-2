@@ -19,8 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       # -- 2. Qt6 build environment ------------------------------------------
-      # brew install qt6 brings in the full Qt6 suite including WebEngine and
-      # WebChannel, which rgui2 requires.  R is pre-installed on macos-13 runners.
+      # Only Qt Base (Core/Gui/Widgets/Network) is needed; no WebEngine.
       - name: Set up Qt6 on macOS
         run: |
           brew install qt6
@@ -41,25 +40,25 @@ jobs:
       # relative to itself, so both directories must live inside Contents/MacOS.
       - name: Create .app bundle
         run: |
-          mkdir -p RGUI2/Contents/MacOS
-          mkdir -p RGUI2/Contents/Resources
+          mkdir -p Simpler/Contents/MacOS
+          mkdir -p Simpler/Contents/Resources
 
-          cp build/bin/rgui2 RGUI2/Contents/MacOS/
-          cp -r build/bin/gogh-themes RGUI2/Contents/MacOS/gogh-themes
-          cp -r build/bin/fonts       RGUI2/Contents/MacOS/fonts
-          cp README.md                RGUI2/Contents/Resources/
+          cp build/bin/simpler Simpler/Contents/MacOS/
+          cp -r build/bin/gogh-themes Simpler/Contents/MacOS/gogh-themes
+          cp -r build/bin/fonts       Simpler/Contents/MacOS/fonts
+          cp README.md                Simpler/Contents/Resources/
 
-          cat > RGUI2/Contents/Info.plist << 'EOF'
+          cat > Simpler/Contents/Info.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
             <key>CFBundleExecutable</key>
-            <string>rgui2</string>
+            <string>simpler</string>
             <key>CFBundleIdentifier</key>
-            <string>com.pacha.r-gui-2</string>
+            <string>com.pacha.simpler</string>
             <key>CFBundleName</key>
-            <string>R GUI 2</string>
+            <string>Simpler</string>
             <key>CFBundleVersion</key>
             <string>${{ inputs.version }}</string>
             <key>CFBundlePackageType</key>
@@ -71,24 +70,24 @@ jobs:
       # -- 5. Bundle Qt frameworks -------------------------------------------
       - name: Bundle Qt frameworks (macdeployqt)
         run: |
-          "$(brew --prefix qt6)/bin/macdeployqt" RGUI2
+          "$(brew --prefix qt6)/bin/macdeployqt" Simpler
 
       # -- 6. Create DMG -----------------------------------------------------
       - name: Create DMG
         run: |
           mkdir -p dmg-root
-          cp -R RGUI2 dmg-root/
+          cp -R Simpler dmg-root/
           hdiutil create \
-            -volname "R GUI 2" \
+            -volname "Simpler" \
             -srcfolder dmg-root \
             -ov \
             -format UDZO \
-            r-gui-2-${{ inputs.version }}-mac.dmg
+            simpler-${{ inputs.version }}-mac.dmg
 
       # -- 7. Upload artifact ------------------------------------------------
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
-          name: R-GUI-2-${{ inputs.version }}-macOS
-          path: r-gui-2-*-mac.dmg
+          name: Simpler-${{ inputs.version }}-macOS
+          path: simpler-*-mac.dmg
           if-no-files-found: error

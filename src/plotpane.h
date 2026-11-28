@@ -39,8 +39,10 @@ private slots:
     void zoomIn();
     void zoomOut();
     void zoomFit();
+    void savePlot();
 
 private:
+    void requestSave(const QString &fmt, const QString &file, int w, int h);
     void readPlotData();
     void writePlotSize();
     void applyZoom();
@@ -59,6 +61,7 @@ private:
     QPushButton  *m_zoomInBtn;
     QPushButton  *m_zoomOutBtn;
     QPushButton  *m_zoomFitBtn;
+    QPushButton  *m_saveBtn;
 
     double  m_zoomFactor  = 1.0;
     bool    m_userZoomed  = false;   // true once user manually zoomed

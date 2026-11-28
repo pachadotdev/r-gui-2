@@ -8,12 +8,12 @@ init_plot_capture(port_file, size_file)
 }
 
 \arguments{
-\item{port_file}{File containing the localhost TCP port used by the Q IDE.}
+\item{port_file}{File containing the localhost TCP port used by the Simpler.}
 
 \item{size_file}{File containing the requested plot width and height in pixels.}
 }
 
 \description{
-Installs the compiled Cairo-backed graphics device used by the Q IDE.
+Makes R draw into an off-screen Cairo PNG device. After every top-level command the current plot is re-rendered at the pane size (at 2x scale for sharper output) and sent to the Simpler over a localhost socket.
 }
 

@@ -2,37 +2,80 @@
 #include "terminalwidget.h"
 #include "thememanager.h"
 
+#include <QDesktopServices>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
-#include <QTextStream>
+#include <QImage>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QRegularExpression>
 #include <QStandardPaths>
+#include <QTextDocument>
+#include <QTextStream>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QDebug>
-#include <QWebEnginePage>
-#include <QWebEngineSettings>
-#include <QLabel>
-#include <QProgressBar>
+#include <cmath>
+
+// ── HelpBrowser ───────────────────────────────────────────────────────────────
+
+QVariant HelpBrowser::loadResource(int type, const QUrl &url)
+{
+    if (type == QTextDocument::ImageResource &&
+        (url.scheme() == "http" || url.scheme() == "https")) {
+        // Never spin a nested event loop here: this runs during layout/paint.
+        const auto it = m_images.constFind(url);
+        if (it != m_images.constEnd())
+            return it.value();
+        if (!m_pending.contains(url)) {
+            m_pending.insert(url);
+            QNetworkReply *reply = m_nam->get(QNetworkRequest(url));
+            connect(reply, &QNetworkReply::finished, this, [this, reply, url]() {
+                reply->deleteLater();
+                m_pending.remove(url);
+                QImage img;
+                if (reply->error() == QNetworkReply::NoError && img.loadFromData(reply->readAll())) {
+                    m_images.insert(url, img);
+                    QTimer::singleShot(0, this, [this]() {
+                        document()->markContentsDirty(0, document()->characterCount());
+                        viewport()->update();
+                    });
+                }
+            });
+        }
+        return QVariant();
+    }
+    return QTextBrowser::loadResource(type, url);
+}
+
+// ── HelpPane ──────────────────────────────────────────────────────────────────
 
 HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
     : QWidget(parent)
     , m_terminal(terminal)
     , m_helpPort(0)
 {
-    // ── Temp files R reads/writes ─────────────────────────────────────────
-    // These paths must match RGUI2_HELP_PORT_FILE / RGUI2_HELP_QUEUE_FILE /
-    // RGUI2_HELP_URL_FILE in terminalwidget.cpp's setupREnv().
+    // These paths must match SIMPLER_HELP_PORT_FILE / SIMPLER_HELP_QUEUE_FILE /
+    // SIMPLER_HELP_URL_FILE in terminalwidget.cpp's setupREnv().
     QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    m_portFilePath      = QDir(tempDir).filePath("rgui2_help_port");
-    m_helpUrlFilePath   = QDir(tempDir).filePath("rgui2_help_url");
-    m_helpQueueFilePath = QDir(tempDir).filePath("rgui2_help_queue");
+    m_portFilePath      = QDir(tempDir).filePath("simpler_help_port");
+    m_helpUrlFilePath   = QDir(tempDir).filePath("simpler_help_url");
+    m_helpQueueFilePath = QDir(tempDir).filePath("simpler_help_queue");
 
-    // ── Layout ────────────────────────────────────────────────────────────
+    m_nam = new QNetworkAccessManager(this);
+
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
     layout->setSpacing(4);
 
-    // Search row
     QHBoxLayout *searchRow = new QHBoxLayout();
     searchRow->setSpacing(4);
+
+    m_backBtn = new QPushButton(tr("Back"), this);
+    m_backBtn->setFixedWidth(50);
+    m_backBtn->setEnabled(false);
+    searchRow->addWidget(m_backBtn);
 
     m_homeBtn = new QPushButton(tr("Home"), this);
     m_homeBtn->setFixedWidth(50);
@@ -50,16 +93,13 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
 
     layout->addLayout(searchRow);
 
-    // Web view
-    m_webView = new QWebEngineView(this);
-    m_webView->settings()->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, true);
-    m_webView->setUrl(QUrl("about:blank"));
-    layout->addWidget(m_webView, 1);
+    m_view = new HelpBrowser(m_nam, this);
+    m_view->setOpenLinks(false);
+    layout->addWidget(m_view, 1);
+    applyThemeStyle();
 
-    // ── File watcher (notified when R writes the port file or a help URL) ─
+    // File watcher: notified when R writes the port file or a help URL.
     m_watcher = new QFileSystemWatcher(this);
-
-    // Create both watched files so the watcher can track them before R writes.
     for (const QString &fp : {m_portFilePath, m_helpUrlFilePath}) {
         QFile f(fp);
         if (!f.exists() && f.open(QIODevice::WriteOnly))
@@ -67,24 +107,35 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
         m_watcher->addPath(fp);
     }
 
-    // Fallback poll every 2 s in case the watcher misses the write
+    // Fallback poll every 2 s in case the watcher misses the write.
     m_pollTimer = new QTimer(this);
     m_pollTimer->setInterval(2000);
 
-    // ── Connections ───────────────────────────────────────────────────────
     connect(m_searchBtn, &QPushButton::clicked, this, &HelpPane::onSearchRequested);
     connect(m_searchBar, &QLineEdit::returnPressed, this, &HelpPane::onSearchRequested);
-    connect(m_homeBtn,   &QPushButton::clicked,     this, [this]() {
+    connect(m_homeBtn,   &QPushButton::clicked, this, [this]() {
         navigateTo("/doc/html/index.html");
     });
+    connect(m_backBtn,   &QPushButton::clicked, this, &HelpPane::goBack);
     connect(m_watcher,   &QFileSystemWatcher::fileChanged, this, &HelpPane::onPortFileChanged);
-    connect(m_pollTimer, &QTimer::timeout,                 this, [this]() {
+    connect(m_pollTimer, &QTimer::timeout, this, [this]() {
         onPortFileChanged(m_portFilePath);
     });
-    connect(m_webView,   &QWebEngineView::loadFinished, this, &HelpPane::onLoadFinished);
+    connect(m_view, &QTextBrowser::anchorClicked, this, [this](const QUrl &link) {
+        const QUrl target = m_currentUrl.isValid() ? m_currentUrl.resolved(link) : link;
+        if (target.scheme() == "http" && target.host() == "127.0.0.1") {
+            // Same-page anchors just scroll.
+            if (!target.fragment().isEmpty() &&
+                target.adjusted(QUrl::RemoveFragment) == m_currentUrl.adjusted(QUrl::RemoveFragment)) {
+                m_view->scrollToAnchor(target.fragment());
+                return;
+            }
+            loadUrl(target);
+        } else {
+            QDesktopServices::openUrl(target);
+        }
+    });
 
-    // Start the R help server as soon as the widget is created.
-    // We defer slightly so the R console is ready.
     QTimer::singleShot(2000, this, &HelpPane::startHelpServer);
 }
 
@@ -92,7 +143,7 @@ HelpPane::HelpPane(TerminalWidget *terminal, QWidget *parent)
 
 void HelpPane::startHelpServer()
 {
-    // rgui2::init_help_pane() (called from the R startup script) starts the
+    // simplerapi::init_help_pane() (called from the R startup script) starts the
     // dynamic help server and writes the port to m_portFilePath as soon as
     // R has finished loading. We just poll the port file until it appears.
     if (m_helpPort == 0)
@@ -116,19 +167,17 @@ void HelpPane::onSearchRequested()
     }
 
     if (m_helpPort == 0) {
-        // Server not ready yet; queue the search after the server starts.
         startHelpServer();
         QTimer::singleShot(3000, this, &HelpPane::onSearchRequested);
         return;
     }
 
-    // Support "pkg::fn" notation: jump directly to the function help page.
+    // "pkg::fn" jumps straight to the function help page.
     if (topic.contains("::")) {
         QStringList parts = topic.split("::");
         if (parts.size() == 2) {
-            QString pkg = parts[0].trimmed();
-            QString fn  = parts[1].trimmed();
-            navigateTo(QString("/library/%1/html/%2.html").arg(pkg, fn));
+            navigateTo(QString("/library/%1/html/%2.html")
+                           .arg(parts[0].trimmed(), parts[1].trimmed()));
             return;
         }
     }
@@ -139,7 +188,7 @@ void HelpPane::onSearchRequested()
 
 void HelpPane::onPortFileChanged(const QString &path)
 {
-    // ── Help-URL file: R resolved a topic → navigate there ───────────────
+    // R resolved a topic → navigate there.
     if (path == m_helpUrlFilePath) {
         QFile f(path);
         if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
@@ -147,11 +196,11 @@ void HelpPane::onPortFileChanged(const QString &path)
         QString url = in.readLine().trimmed();
         f.close();
         if (!url.isEmpty())
-            m_webView->setUrl(QUrl(url));
+            loadUrl(QUrl(url));
         return;
     }
 
-    // ── Port file: R wrote the help-server port ───────────────────────────
+    // R wrote the help-server port.
     if (m_helpPort != 0) {
         m_pollTimer->stop();
         return;
@@ -171,124 +220,101 @@ void HelpPane::onPortFileChanged(const QString &path)
         applyPort(port);
 }
 
-void HelpPane::onLoadFinished(bool ok)
+// ── Loading / rendering ───────────────────────────────────────────────────────
+
+void HelpPane::loadUrl(const QUrl &url, bool addToHistory)
 {
-    Q_UNUSED(ok)
+    QNetworkReply *reply = m_nam->get(QNetworkRequest(url));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, url, addToHistory]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            showHtml(QString("<p>%1</p><p><code>%2</code></p>")
+                         .arg(tr("Could not load help page."), reply->errorString().toHtmlEscaped()),
+                     url);
+            return;
+        }
+        if (addToHistory && m_currentUrl.isValid())
+            m_history.append(m_currentUrl);
+        m_backBtn->setEnabled(!m_history.isEmpty());
+        showHtml(QString::fromUtf8(reply->readAll()), url);
 
-    // Restyle the loaded R help page to match the current IDE theme.
-    injectThemeCss();
+        // Keep the search bar in sync with the resolved topic.
+        static const QRegularExpression re(R"(/library/([^/]+)/html/([^/]+)\.html$)");
+        const QRegularExpressionMatch m = re.match(url.path());
+        if (m.hasMatch())
+            m_searchBar->setText(m.captured(1) + "::" + m.captured(2));
+    });
+}
 
-    // Keep the search bar in sync with the current URL so the user can see
-    // what topic was resolved.
-    QUrl url = m_webView->url();
-    if (!url.isValid() || url.scheme() == "about")
-        return;
+void HelpPane::showHtml(const QString &html, const QUrl &url)
+{
+    m_currentUrl = url;
+    m_currentHtml = html;
+    m_view->document()->setBaseUrl(url);
+    applyThemeStyle();
+    m_view->setHtml(html);
+    if (!url.fragment().isEmpty())
+        m_view->scrollToAnchor(url.fragment());
+}
 
-    // If it's a search page, leave the search bar as-is.
-    // If it's a direct topic page, show "pkg::fn" in the search bar.
-    QString path = url.path();
-    static QRegularExpression re(R"(/library/([^/]+)/html/([^/]+)\.html$)");
-    QRegularExpressionMatch m = re.match(path);
-    if (m.hasMatch())
-        m_searchBar->setText(m.captured(1) + "::" + m.captured(2));
+void HelpPane::goBack()
+{
+    if (m_history.isEmpty()) return;
+    const QUrl prev = m_history.takeLast();
+    m_backBtn->setEnabled(!m_history.isEmpty());
+    loadUrl(prev, false);
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
 void HelpPane::setTheme(const EditorTheme & /*theme*/)
 {
-    // Re-inject CSS using the current ThemeManager state. Cheap and avoids
-    // having to cache the theme inside HelpPane.
-    injectThemeCss();
+    applyThemeStyle();
+    if (!m_currentHtml.isEmpty())
+        m_view->setHtml(m_currentHtml);
 }
 
-void HelpPane::injectThemeCss()
+void HelpPane::applyThemeStyle()
 {
-    if (!m_webView || !m_webView->page()) return;
-
     const EditorTheme theme = ThemeManager::instance().currentTheme();
-    const QColor bg   = theme.background;
-    const QColor fg   = theme.foreground;
-    const QColor codeBg = theme.lineNumberBg.isValid() ? theme.lineNumberBg
-                                                       : bg.lighter(115);
+    const QColor bg = theme.background;
+    const QColor fg = theme.foreground;
+    const QColor codeBg = theme.lineNumberBg.isValid() ? theme.lineNumberBg : bg.lighter(115);
     const QColor border = fg.darker(150);
 
-    // Pick a link colour with guaranteed contrast against bg.
-    // Start from theme.function (or theme.keyword), then lighten/darken until
-    // the relative-luminance contrast is ≥ 4.5:1 (WCAG AA).
+    // Link colour with WCAG AA contrast (≥ 4.5:1) against the background.
     auto toLinear = [](qreal c) {
         return c <= 0.03928 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
     };
     auto luminance = [&](const QColor &c) {
-        return 0.2126 * toLinear(c.redF())
-             + 0.7152 * toLinear(c.greenF())
-             + 0.0722 * toLinear(c.blueF());
+        return 0.2126 * toLinear(c.redF()) + 0.7152 * toLinear(c.greenF()) + 0.0722 * toLinear(c.blueF());
     };
     auto contrast = [&](const QColor &a, const QColor &b) {
         qreal la = luminance(a), lb = luminance(b);
         return (qMax(la, lb) + 0.05) / (qMin(la, lb) + 0.05);
     };
-
     QColor link = theme.function.isValid() ? theme.function : theme.keyword;
-    // Nudge the link colour until we reach ≥ 4.5:1 contrast with bg.
-    for (int i = 0; i < 20 && contrast(link, bg) < 4.5; ++i) {
-        // If bg is dark, lighten; if light, darken.
+    for (int i = 0; i < 20 && contrast(link, bg) < 4.5; ++i)
         link = luminance(bg) < 0.18 ? link.lighter(115) : link.darker(115);
-    }
 
-    auto rgba = [](const QColor &c, qreal a = 1.0) {
-        return QString("rgba(%1,%2,%3,%4)")
-            .arg(c.red()).arg(c.green()).arg(c.blue()).arg(a);
-    };
+    m_view->setStyleSheet(QString("QTextBrowser { background-color: %1; color: %2; border: none; }")
+                              .arg(bg.name(), fg.name()));
 
-    const QString css = QString(R"CSS(
-        html, body { background: %1 !important; color: %2 !important; }
-        body { font-family: sans-serif; }
-        a, a:link, a:visited {
-            color: %3 !important;
-            background: %1 !important;
-            text-decoration: none;
-        }
-        a:hover { text-decoration: underline; }
-        h1, h2, h3, h4, h5, h6, table, tr, td, th, dt, dd, p, li, span, div {
-            color: %2 !important;
-            background: transparent !important;
-            border-color: %4 !important;
-        }
-        pre, code, kbd, samp, tt {
-            background: %5 !important;
-            color: %2 !important;
-            border: 1px solid %4 !important;
-            padding: 2px 4px;
-            border-radius: 3px;
-        }
-        pre { padding: 8px; overflow: auto; }
-        table { border-collapse: collapse; }
-        table, th, td { border: 1px solid %4 !important; }
-        hr { border-color: %4 !important; }
-    )CSS").arg(rgba(bg), rgba(fg), rgba(link), rgba(border), rgba(codeBg));
-
-    // Strip newlines so we can embed the CSS literal in a JS string safely.
-    QString cssOneLine = css;
-    cssOneLine.replace('\n', ' ').replace('\r', ' ').replace('\\', "\\\\").replace('\'', "\\'");
-
-    const QString js = QString(
-        "(function(){"
-        "  var id = 'q-ide-theme-style';"
-        "  var s = document.getElementById(id);"
-        "  if (!s) { s = document.createElement('style'); s.id = id;"
-        "            document.head && document.head.appendChild(s); }"
-        "  s.textContent = '%1';"
-        "})();"
-    ).arg(cssOneLine);
-
-    m_webView->page()->runJavaScript(js);
+    // QTextDocument understands a small CSS subset; this is applied at setHtml().
+    m_view->document()->setDefaultStyleSheet(QString(
+        "body { color: %1; background-color: %2; }"
+        "a { color: %3; text-decoration: none; }"
+        "h1, h2, h3, h4, h5, h6 { color: %1; }"
+        "pre, code, tt { background-color: %4; color: %1; }"
+        "table, th, td { border-color: %5; }"
+    ).arg(fg.name(), bg.name(), link.name(), codeBg.name(), border.name()));
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
+
 void HelpPane::resolveHelpTopic(const QString &topic)
 {
-    // Silent channel: write the topic to the queue file. The rgui2 R package
+    // Silent channel: write the topic to the queue file. The simplerapi R package
     // (init_help_pane) polls this file via later::later() and writes the
     // resolved URL to m_helpUrlFilePath without ever touching stdin/stdout.
     QFile f(m_helpQueueFilePath);
@@ -300,11 +326,11 @@ void HelpPane::resolveHelpTopic(const QString &topic)
     out << topic << "\n";
     f.close();
 }
+
 void HelpPane::navigateTo(const QString &path)
 {
     if (m_helpPort == 0) return;
-    QUrl url(QString("http://127.0.0.1:%1%2").arg(m_helpPort).arg(path));
-    m_webView->setUrl(url);
+    loadUrl(QUrl(QString("http://127.0.0.1:%1%2").arg(m_helpPort).arg(path)));
 }
 
 void HelpPane::applyPort(int port)
@@ -312,7 +338,5 @@ void HelpPane::applyPort(int port)
     m_helpPort = port;
     m_pollTimer->stop();
     qDebug() << "R help server running on port" << port;
-
-    // Show the help home page.
     navigateTo("/doc/html/index.html");
 }

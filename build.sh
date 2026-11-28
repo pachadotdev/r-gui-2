@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build script for R GUI 2 - Made with Qt
+# Build script for Simpler - Made with Qt
 # Usage:
-#   ./build.sh           -> Build R GUI 2
+#   ./build.sh           -> Build Simpler
 #   ./build.sh --clean   -> Clean and rebuild
 #   ./build.sh --package -> Build Arch package with makepkg
 
@@ -24,7 +24,7 @@ for arg in "$@"; do
             BUILD_PACKAGE=1
             ;;
         --help)
-            echo "R GUI 2 build script"
+            echo "Simpler build script"
             echo ""
             echo "Usage: $0 [options]"
             echo ""
@@ -43,7 +43,7 @@ for arg in "$@"; do
 done
 
 echo "=========================================="
-echo "Building R GUI 2 - Simple R IDE"
+echo "Building Simpler - Simple R IDE"
 echo "=========================================="
 echo ""
 
@@ -79,14 +79,14 @@ fi
 echo "Installing jsonlite..."
 R -e "if (!require('jsonlite', quietly=TRUE)) install.packages('jsonlite', repos='https://cloud.r-project.org')"
 
-echo "Building rgui R package..."
-rm -f "${RG2SRC}"/rgui2_*.tar.gz
-R CMD build "${RG2SRC}/rgui2pkg"
+echo "Building simplerapi R package..."
+rm -f "${RG2SRC}"/simplerapi_*.tar.gz
+R CMD build "${RG2SRC}/simplerapi"
 
 R_PACKAGE_TARBALL="$(find "${RG2SRC}" -maxdepth 1 -type f \
-    -name 'rgui2_*.tar.gz' -printf '%f\n' | sort -V | tail -n 1)"
+    -name 'simplerapi_*.tar.gz' -printf '%f\n' | sort -V | tail -n 1)"
 if [ -z "${R_PACKAGE_TARBALL}" ]; then
-    echo "ERROR: R CMD build did not create an rgui2 package archive." >&2
+    echo "ERROR: R CMD build did not create an simplerapi package archive." >&2
     exit 1
 fi
 
@@ -125,10 +125,10 @@ echo "=========================================="
 echo "Build completed successfully!"
 echo "=========================================="
 echo ""
-echo "Executable: ${BUILD_DIR}/bin/rgui2"
+echo "Executable: ${BUILD_DIR}/bin/simpler"
 echo ""
 echo "To run the application:"
-echo "  ${BUILD_DIR}/bin/rgui2"
+echo "  ${BUILD_DIR}/bin/simpler"
 echo ""
 
 # Build package if requested
@@ -141,6 +141,6 @@ if [ "${BUILD_PACKAGE}" = "1" ]; then
     makepkg -f
     echo ""
     echo "Package built! Install with:"
-    echo "  sudo pacman -U r-gui-2-*.pkg.tar.zst"
+    echo "  sudo pacman -U simpler-*.pkg.tar.zst"
     echo ""
 fi

@@ -1,4 +1,4 @@
-// terminalwidget.cpp  –  xterm.js-based terminal for all platforms.
+// terminalwidget.cpp  –  native (QPainter + VtScreen) terminal for all platforms.
 // PTY backend: POSIX forkpty on Linux/macOS, ConPTY on Windows.
 
 #include "terminalwidget.h"
@@ -12,16 +12,20 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFontMetrics>
+#include <QInputMethodEvent>
+#include <QKeyEvent>
 #include <QMenu>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QResizeEvent>
+#include <QScrollBar>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QThread>
 #include <QTimer>
-#include <QWebEnginePage>
-#include <QWebEngineSettings>
+#include <QWheelEvent>
 #include <atomic>
 
 // ── Platform-specific headers ─────────────────────────────────────────────────
@@ -177,14 +181,14 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
                          const QString &plotChannelFile, const QString &plotSizeFile)
 {
     QString pid      = QString::number(QCoreApplication::applicationPid());
-    QString initPath = QDir::tempPath() + "/rgui2_init_" + pid + ".R";
+    QString initPath = QDir::tempPath() + "/simpler_init_" + pid + ".R";
     QFile f(initPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
         return {};
 
     QTextStream out(&f);
     out << "invisible(local({\n"
-        << "  orig_prof <- Sys.getenv('RGUI2_ORIGINAL_R_PROFILE_USER')\n"
+        << "  orig_prof <- Sys.getenv('SIMPLER_ORIGINAL_R_PROFILE_USER')\n"
         << "  if (nzchar(orig_prof) && file.exists(orig_prof)) {\n"
         << "    source(orig_prof)\n"
         << "  } else {\n"
@@ -192,17 +196,17 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
         << "    else if (file.exists(file.path(Sys.getenv('HOME'), '.Rprofile')))\n"
         << "      source(file.path(Sys.getenv('HOME'), '.Rprofile'))\n"
         << "  }\n"
-        << "  if (requireNamespace('rgui2', quietly=TRUE)) {\n"
-        << "    library(rgui2)\n"
-        << "    rgui2::init_monitor(Sys.getenv('RGUI2_ENV_FILE', unset='/tmp/rgui2_env.json'))\n"
-        << "    tryCatch(rgui2::init_help_pane(\n"
-        << "      port_file  = Sys.getenv('RGUI2_HELP_PORT_FILE',  unset='/tmp/rgui2_help_port'),\n"
-        << "      queue_file = Sys.getenv('RGUI2_HELP_QUEUE_FILE', unset='/tmp/rgui2_help_queue'),\n"
-        << "      url_file   = Sys.getenv('RGUI2_HELP_URL_FILE',   unset='/tmp/rgui2_help_url')\n"
+        << "  if (requireNamespace('simplerapi', quietly=TRUE)) {\n"
+        << "    library(simplerapi)\n"
+        << "    simplerapi::init_monitor(Sys.getenv('SIMPLER_ENV_FILE', unset='/tmp/simpler_env.json'))\n"
+        << "    tryCatch(simplerapi::init_help_pane(\n"
+        << "      port_file  = Sys.getenv('SIMPLER_HELP_PORT_FILE',  unset='/tmp/simpler_help_port'),\n"
+        << "      queue_file = Sys.getenv('SIMPLER_HELP_QUEUE_FILE', unset='/tmp/simpler_help_queue'),\n"
+        << "      url_file   = Sys.getenv('SIMPLER_HELP_URL_FILE',   unset='/tmp/simpler_help_url')\n"
         << "    ), error = function(e) NULL)\n"
-        << "    tryCatch(rgui2::init_plot_capture(\n"
-        << "      Sys.getenv('RGUI2_PLOT_PORT_FILE', unset=file.path(tempdir(), 'rgui2_plot_port')),\n"
-        << "      Sys.getenv('RGUI2_PLOT_SIZE_FILE', unset=file.path(tempdir(), 'rgui2_plot_size'))\n"
+        << "    tryCatch(simplerapi::init_plot_capture(\n"
+        << "      Sys.getenv('SIMPLER_PLOT_PORT_FILE', unset=file.path(tempdir(), 'simpler_plot_port')),\n"
+        << "      Sys.getenv('SIMPLER_PLOT_SIZE_FILE', unset=file.path(tempdir(), 'simpler_plot_size'))\n"
         << "    ), error = function(e) NULL)\n"
         << "  }\n"
         << "}))\n";
@@ -210,48 +214,19 @@ static QString setupREnv(QStringList &env, const QProcessEnvironment &sysEnv,
 
     QString origProf = sysEnv.value("R_PROFILE_USER");
     if (!origProf.isEmpty())
-        env << "RGUI2_ORIGINAL_R_PROFILE_USER=" + origProf;
+        env << "SIMPLER_ORIGINAL_R_PROFILE_USER=" + origProf;
     env << "R_PROFILE_USER=" + initPath;
-    env << "RGUI2_ENV_FILE=" + QDir::tempPath() + "/rgui2_env.json";
-    env << "RGUI2_PLOT_PORT_FILE=" + plotChannelFile;
-    env << "RGUI2_PLOT_SIZE_FILE=" + plotSizeFile;
+    env << "SIMPLER_ENV_FILE=" + QDir::tempPath() + "/simpler_env.json";
+    env << "SIMPLER_PLOT_PORT_FILE=" + plotChannelFile;
+    env << "SIMPLER_PLOT_SIZE_FILE=" + plotSizeFile;
     return initPath;
-}
-
-// ── TerminalBridge implementation ─────────────────────────────────────────────
-
-void TerminalBridge::sendInput(const QString &data)
-{
-    if (tw) tw->writeToPty(data.toUtf8());
-}
-
-void TerminalBridge::resizePty(int cols, int rows)
-{
-    if (tw) tw->doResize(cols, rows);
-}
-
-void TerminalBridge::fontSizeUp()    { if (tw) emit tw->fontSizeAdjustRequested(+1); }
-void TerminalBridge::fontSizeDown()  { if (tw) emit tw->fontSizeAdjustRequested(-1); }
-void TerminalBridge::fontSizeReset() { if (tw) emit tw->fontSizeAdjustRequested(0);  }
-
-void TerminalBridge::ready()
-{
-    if (!tw || tw->ptyStarted) return;
-    tw->ptyStarted = true;
-
-    // Start the PTY with a default 80×24 size.
-    // JS will call resizePty() with the actual FitAddon-measured dimensions immediately after.
-    tw->startPty();
-    tw->doResize(80, 24);
-
-    // Apply the current editor theme.
-    tw->setTheme(tw->currentTheme);
 }
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
 TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
-    : QWebEngineView(parent)
+    : QAbstractScrollArea(parent)
+    , m_screen(80, 24)
 {
     currentTheme = ThemeManager::instance().currentTheme();
 
@@ -298,25 +273,25 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
 
     // ── Build child environment ─────────────────────────────────────────────
     QProcessEnvironment sysEnv = QProcessEnvironment::systemEnvironment();
-    QString plotChannelFile = QDir::tempPath() + "/rgui2_plot_port";
-    QString plotSizeFile = QDir::tempPath() + "/rgui2_plot_size";
+    QString plotChannelFile = QDir::tempPath() + "/simpler_plot_port";
+    QString plotSizeFile = QDir::tempPath() + "/simpler_plot_size";
 
 #ifdef Q_OS_WIN
     // On Windows the child inherits the parent's environment via CreateProcess.
     // We set needed variables directly in the parent before spawning.
     {
         QString tmpDir = QDir::tempPath();
-        SetEnvironmentVariableW(L"RGUI2_ENV_FILE",
-            (tmpDir + "/rgui2_env.json").toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_HELP_PORT_FILE",
-            (tmpDir + "/rgui2_help_port").toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_HELP_QUEUE_FILE",
-            (tmpDir + "/rgui2_help_queue").toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_HELP_URL_FILE",
-            (tmpDir + "/rgui2_help_url").toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_PLOT_PORT_FILE",
+        SetEnvironmentVariableW(L"SIMPLER_ENV_FILE",
+            (tmpDir + "/simpler_env.json").toStdWString().c_str());
+        SetEnvironmentVariableW(L"SIMPLER_HELP_PORT_FILE",
+            (tmpDir + "/simpler_help_port").toStdWString().c_str());
+        SetEnvironmentVariableW(L"SIMPLER_HELP_QUEUE_FILE",
+            (tmpDir + "/simpler_help_queue").toStdWString().c_str());
+        SetEnvironmentVariableW(L"SIMPLER_HELP_URL_FILE",
+            (tmpDir + "/simpler_help_url").toStdWString().c_str());
+        SetEnvironmentVariableW(L"SIMPLER_PLOT_PORT_FILE",
             plotChannelFile.toStdWString().c_str());
-        SetEnvironmentVariableW(L"RGUI2_PLOT_SIZE_FILE",
+        SetEnvironmentVariableW(L"SIMPLER_PLOT_SIZE_FILE",
             plotSizeFile.toStdWString().c_str());
     }
     {
@@ -327,7 +302,7 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
             if (!initPath.isEmpty()) {
                 QString orig = sysEnv.value("R_PROFILE_USER");
                 if (!orig.isEmpty())
-                    SetEnvironmentVariableW(L"RGUI2_ORIGINAL_R_PROFILE_USER",
+                    SetEnvironmentVariableW(L"SIMPLER_ORIGINAL_R_PROFILE_USER",
                                             orig.toStdWString().c_str());
                 SetEnvironmentVariableW(L"R_PROFILE_USER",
                                         initPath.toStdWString().c_str());
@@ -348,63 +323,41 @@ TerminalWidget::TerminalWidget(const QString &shell, QWidget *parent)
         setupREnv(envList, sysEnv, plotChannelFile, plotSizeFile);
 #endif
 
-    // ── Set up QWebChannel ──────────────────────────────────────────────────
-    channel = new QWebChannel(this);
-    bridge  = new TerminalBridge(this);
-    bridge->tw = this;
-    channel->registerObject(QStringLiteral("bridge"), bridge);
-    page()->setWebChannel(channel);
-
-    // WebEngine may deliver the resize event before the page's CSS viewport
-    // has settled. Debounce fitting so maximize and splitter changes are
-    // measured using the final viewport dimensions.
-    fitTimer = new QTimer(this);
-    fitTimer->setSingleShot(true);
-    fitTimer->setInterval(50);
-    connect(fitTimer, &QTimer::timeout, this, [this]() {
-        if (pageLoaded)
-            page()->runJavaScript("if(window.fitTerminal) window.fitTerminal();");
+    // ── Widget setup ────────────────────────────────────────────────────────
+    setFocusPolicy(Qt::StrongFocus);
+    setAttribute(Qt::WA_InputMethodEnabled, true);
+    viewport()->setCursor(Qt::IBeamCursor);
+    verticalScrollBar()->setSingleStep(1);
+    connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this]() {
+        m_stickToBottom = verticalScrollBar()->value() == verticalScrollBar()->maximum();
+        viewport()->update();
     });
 
-    // ── Load the xterm.js terminal page ────────────────────────────────────
-    // PTY is started when xterm.js calls bridge.ready() after QWebChannel init.
-    page()->load(QUrl(QStringLiteral("qrc:///xterm/terminal.html")));
+    m_font = QFont(ThemeManager::instance().monospaceFont());
+    m_font.setStyleHint(QFont::Monospace);
+    m_font.setPointSize(12);
+    updateFontMetrics();
+    updateGrid();
 
-    // Re-fit after load so xterm.js measures the real (laid-out) widget size,
-    // not the default viewport size the engine uses before layout settles.
-    connect(page(), &QWebEnginePage::loadFinished, this, [this](bool ok) {
-        if (!ok) return;
-        pageLoaded = true;
-        setFontFamily(ThemeManager::instance().monospaceFont());
-        // Apply any font size requested before the page was ready.
-        if (pendingFontSize > 0) {
-            const int s = pendingFontSize;
-            page()->runJavaScript(QString(
-                "if (window.setFontSize) {"
-                "  window.setFontSize(%1);"
-                "} else if (window.resetFontSize && window.adjustFontSize) {"
-                "  window.resetFontSize();"
-                "  window.adjustFontSize(%1 - 12);"
-                "}").arg(s));
-        }
-        QTimer::singleShot(100, this, [this]() {
-            page()->runJavaScript("if(window.fitTerminal) window.fitTerminal();");
-        });
+    m_screen.setReplyHandler([this](const QByteArray &b) { writeToPty(b); });
+
+    // Start the child once the widget has had a chance to receive its real size.
+    QTimer::singleShot(0, this, [this]() {
+        if (ptyStarted) return;
+        ptyStarted = true;
+        updateGrid();
+        startPty();
+        doResize(m_cols, m_rows);
     });
 }
 
 void TerminalWidget::setInitialFontSize(int pt)
 {
-    pendingFontSize = pt;
-    if (pageLoaded) {
-        page()->runJavaScript(QString(
-            "if (window.setFontSize) {"
-            "  window.setFontSize(%1);"
-            "} else if (window.resetFontSize && window.adjustFontSize) {"
-            "  window.resetFontSize();"
-            "  window.adjustFontSize(%1 - 12);"
-            "}").arg(pt));
-    }
+    if (pt <= 0) return;
+    m_font.setPointSize(pt);
+    updateFontMetrics();
+    updateGrid();
+    viewport()->update();
 }
 
 // ── Destructor ────────────────────────────────────────────────────────────────
@@ -469,13 +422,9 @@ void TerminalWidget::startPty()
 {
     pty = new ConPtyImpl;
 
-    // Initial size: compute from widget dimensions using the terminal font.
-    QFont font;
-    font.setFamily("Hack Nerd Font Mono");
-    font.setPointSize(10);
-    QFontMetrics fm(font);
-    pty->cols = qMax(40, width()  / qMax(1, fm.horizontalAdvance('M')));
-    pty->rows = qMax(10, height() / qMax(1, fm.height()));
+    // Initial size comes from the current terminal grid.
+    pty->cols = m_cols;
+    pty->rows = m_rows;
 
     COORD sz = { static_cast<SHORT>(pty->cols), static_cast<SHORT>(pty->rows) };
 
@@ -531,14 +480,7 @@ void TerminalWidget::startPty()
         const QString message = QString("Unable to start R. Rterm.exe was not found or could not be "
                                         "launched (Windows error %1).").arg(error);
         qWarning().noquote() << message;
-        QString escapedMessage = message;
-        escapedMessage.replace("\\", "\\\\")
-            .replace("'", "\\'")
-            .replace("\r", "")
-            .replace("\n", "\\n");
-        page()->runJavaScript(QString(
-            "if(window.term){term.write('\\r\\n\\x1b[31m%1\\x1b[0m\\r\\n');}"
-        ).arg(escapedMessage));
+        showMessage(message, 1);
         CloseHandle(pty->hPtyIn);
         CloseHandle(pty->hPtyOut);
         ClosePseudoConsole(pty->hPCon);
@@ -568,8 +510,8 @@ void TerminalWidget::startPty()
 {
     // Initial terminal size (corrected by doResize immediately after).
     struct winsize ws{};
-    ws.ws_col = 80;
-    ws.ws_row = 24;
+    ws.ws_col = static_cast<unsigned short>(m_cols);
+    ws.ws_row = static_cast<unsigned short>(m_rows);
 
     // Build argv for execve.
     QList<QByteArray> argBufs;
@@ -673,14 +615,11 @@ void TerminalWidget::onPtyReaderFinished()
         return;
 
     // Print a notice in the terminal before restarting.
-    page()->runJavaScript(
-        "if(window.term){"
-        "  term.write('\\r\\n\\x1b[33m[R session ended \u2013 restarting\u2026]\\x1b[0m\\r\\n');"
-        "}");
+    showMessage(QStringLiteral("[R session ended \u2013 restarting\u2026]"), 3);
 
     QTimer::singleShot(600, this, [this]() {
         startPty();
-        page()->runJavaScript("if(window.fitTerminal) window.fitTerminal();");
+        doResize(m_cols, m_rows);
     });
 }
 
@@ -763,14 +702,16 @@ void TerminalWidget::sendOutput(const QByteArray &data)
         suppressInternalPrompt = false;
     }
 
-    QString output = QString::fromUtf8(visibleData);
+    QString output = m_decoder(visibleData);
     static const QRegularExpression internalSource(
-        QStringLiteral(R"(>?\s*source\('/tmp/rgui2_cmd_[0-9]+\.R', echo=FALSE, print\.eval=FALSE, local=FALSE\))"));
+        QStringLiteral(R"(>?\s*source\('/tmp/simpler_cmd_[0-9]+\.R', echo=FALSE, print\.eval=FALSE, local=FALSE\))"));
     output.replace(internalSource, QString());
     if (output.isEmpty())
         return;
 
-    emit bridge->outputReady(QString::fromLatin1(output.toUtf8().toBase64()));
+    m_screen.feed(output);
+    updateScrollBar();
+    viewport()->update();
 }
 
 void TerminalWidget::doResize(int cols, int rows)
@@ -791,32 +732,330 @@ void TerminalWidget::doResize(int cols, int rows)
 #endif
 }
 
-// ── Theme ─────────────────────────────────────────────────────────────────────
+// ── Theme / font ──────────────────────────────────────────────────────────────
 
 void TerminalWidget::setTheme(const EditorTheme &theme)
 {
     currentTheme = theme;
-    emit bridge->themeChanged(theme.background.name(),
-                               theme.foreground.name(),
-                               theme.foreground.name());
+    viewport()->update();
 }
 
 void TerminalWidget::setFontFamily(const QString &family)
 {
-    QString escaped = family;
-    escaped.replace('\\', "\\\\").replace('\'', "\\'");
-    page()->runJavaScript(QString(
-        "if (window.setFontFamily) window.setFontFamily('%1');").arg(escaped));
+    m_font.setFamily(family);
+    updateFontMetrics();
+    updateGrid();
+    viewport()->update();
 }
 
-// ── Resize ────────────────────────────────────────────────────────────────────
+void TerminalWidget::updateFontMetrics()
+{
+    m_font.setKerning(false);
+    QFontMetrics fm(m_font);
+    m_cellW = qMax(1, fm.horizontalAdvance(QLatin1Char('M')));
+    m_cellH = qMax(1, fm.height());
+    m_ascent = fm.ascent();
+}
+
+void TerminalWidget::updateGrid()
+{
+    const int cols = qMax(2, viewport()->width() / m_cellW);
+    const int rows = qMax(1, viewport()->height() / m_cellH);
+    if (cols != m_cols || rows != m_rows) {
+        m_cols = cols;
+        m_rows = rows;
+        m_screen.resize(cols, rows);
+        doResize(cols, rows);
+    }
+    updateScrollBar();
+}
+
+void TerminalWidget::updateScrollBar()
+{
+    QScrollBar *bar = verticalScrollBar();
+    const int maxv = qMax(0, m_screen.lineCount() - m_rows);
+    bar->setRange(0, maxv);
+    bar->setPageStep(m_rows);
+    if (m_stickToBottom)
+        bar->setValue(maxv);
+}
+
+void TerminalWidget::showMessage(const QString &text, int ansiColor)
+{
+    m_screen.feed(QStringLiteral("\r\n\x1b[3%1m%2\x1b[0m\r\n").arg(ansiColor).arg(text));
+    updateScrollBar();
+    viewport()->update();
+}
 
 void TerminalWidget::resizeEvent(QResizeEvent *event)
 {
-    QWebEngineView::resizeEvent(event);
-    fitTimer->start();
+    QAbstractScrollArea::resizeEvent(event);
+    updateGrid();
 }
 
+// ── Painting ──────────────────────────────────────────────────────────────────
+
+QColor TerminalWidget::paletteColor(qint32 code, bool isFg) const
+{
+    if (code < 0)
+        return isFg ? currentTheme.foreground : currentTheme.background;
+    if (code >= 0x01000000)
+        return QColor((code >> 16) & 0xFF, (code >> 8) & 0xFF, code & 0xFF);
+
+    const QColor *ansi[16] = {
+        &currentTheme.color_01, &currentTheme.color_02, &currentTheme.color_03, &currentTheme.color_04,
+        &currentTheme.color_05, &currentTheme.color_06, &currentTheme.color_07, &currentTheme.color_08,
+        &currentTheme.color_09, &currentTheme.color_10, &currentTheme.color_11, &currentTheme.color_12,
+        &currentTheme.color_13, &currentTheme.color_14, &currentTheme.color_15, &currentTheme.color_16};
+    if (code < 16)
+        return *ansi[code];
+    if (code < 232) {
+        const int i = code - 16;
+        auto lvl = [](int v) { return v == 0 ? 0 : 55 + v * 40; };
+        return QColor(lvl(i / 36), lvl((i / 6) % 6), lvl(i % 6));
+    }
+    const int g = 8 + (code - 232) * 10;
+    return QColor(g, g, g);
+}
+
+void TerminalWidget::paintEvent(QPaintEvent *)
+{
+    QPainter p(viewport());
+    p.fillRect(viewport()->rect(), currentTheme.background);
+    p.setFont(m_font);
+
+    const int first = verticalScrollBar()->value();
+    const int total = m_screen.lineCount();
+    const int curLine = m_screen.cursorLine();
+    const int curCol = m_screen.cursorCol();
+    const bool atBottom = first >= total - m_rows;
+    const qint64 dropped = m_screen.droppedLines();
+
+    QPoint selA = m_selAnchor, selB = m_selHead;
+    if (selB.y() < selA.y() || (selB.y() == selA.y() && selB.x() < selA.x()))
+        std::swap(selA, selB);
+    auto selected = [&](int line, int col) {
+        if (!m_hasSelection) return false;
+        const qint64 abs = line + dropped;
+        if (abs < selA.y() || abs > selB.y()) return false;
+        if (abs == selA.y() && col < selA.x()) return false;
+        if (abs == selB.y() && col > selB.x()) return false;
+        return true;
+    };
+
+    quint8 curFlags = 0xFF;
+    const int lastVisible = qMin(total, first + m_rows + 1);
+    for (int li = first; li < lastVisible; ++li) {
+        const VtScreen::Line &line = m_screen.line(li);
+        const int y = (li - first) * m_cellH;
+        const int ncols = qMax<int>(line.size(), 0);
+        for (int c = 0; c < ncols; ++c) {
+            const VtCell &cell = line.at(c);
+            const bool isCursor = atBottom && li == curLine && c == curCol && hasFocus();
+            const bool sel = selected(li, c);
+
+            QColor fg = paletteColor(
+                (cell.flags & VtCell::Bold) && cell.fg >= 0 && cell.fg < 8 ? cell.fg + 8 : cell.fg, true);
+            QColor bg = paletteColor(cell.bg, false);
+            if (cell.flags & VtCell::Reverse)
+                std::swap(fg, bg);
+            if (sel) {
+                bg = currentTheme.selection;
+            }
+            if (isCursor) {
+                bg = currentTheme.cursor.isValid() ? currentTheme.cursor : currentTheme.foreground;
+                fg = currentTheme.background;
+            }
+
+            const int x = c * m_cellW;
+            const bool needBg = isCursor || sel || cell.bg >= 0 || (cell.flags & VtCell::Reverse);
+            if (needBg)
+                p.fillRect(x, y, m_cellW, m_cellH, bg);
+
+            if (cell.ch != U' ') {
+                if (cell.flags != curFlags) {
+                    QFont f = m_font;
+                    f.setBold(cell.flags & VtCell::Bold);
+                    f.setItalic(cell.flags & VtCell::Italic);
+                    f.setUnderline(cell.flags & VtCell::Underline);
+                    p.setFont(f);
+                    curFlags = cell.flags;
+                }
+                p.setPen(fg);
+                p.drawText(x, y + m_ascent, QString::fromUcs4(&cell.ch, 1));
+            }
+        }
+    }
+
+    // Hollow cursor when unfocused.
+    if (atBottom && !hasFocus() && curLine >= first && curLine < first + m_rows) {
+        p.setPen(currentTheme.foreground);
+        p.drawRect(curCol * m_cellW, (curLine - first) * m_cellH, m_cellW - 1, m_cellH - 1);
+    }
+}
+
+void TerminalWidget::focusInEvent(QFocusEvent *e)  { QAbstractScrollArea::focusInEvent(e);  viewport()->update(); }
+void TerminalWidget::focusOutEvent(QFocusEvent *e) { QAbstractScrollArea::focusOutEvent(e); viewport()->update(); }
+bool TerminalWidget::focusNextPrevChild(bool) { return false; }  // Tab belongs to the shell
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+
+void TerminalWidget::keyPressEvent(QKeyEvent *e)
+{
+    const Qt::KeyboardModifiers mods = e->modifiers();
+    const bool ctrl = mods & Qt::ControlModifier;
+    const bool shift = mods & Qt::ShiftModifier;
+    const bool alt = mods & Qt::AltModifier;
+    const int key = e->key();
+
+    if (ctrl && shift && key == Qt::Key_C) {
+        QApplication::clipboard()->setText(selectedText());
+        return;
+    }
+    if ((ctrl && shift && key == Qt::Key_V) || (shift && key == Qt::Key_Insert)) {
+        QString t = QApplication::clipboard()->text();
+        t.replace("\r\n", "\r").replace('\n', '\r');
+        writeToPty(t.toUtf8());
+        return;
+    }
+    if (ctrl && !shift && !alt) {
+        if (key == Qt::Key_Plus || key == Qt::Key_Equal) { emit fontSizeAdjustRequested(+1); return; }
+        if (key == Qt::Key_Minus) { emit fontSizeAdjustRequested(-1); return; }
+        if (key == Qt::Key_0)     { emit fontSizeAdjustRequested(0);  return; }
+    }
+    if (shift && (key == Qt::Key_PageUp || key == Qt::Key_PageDown)) {
+        QScrollBar *bar = verticalScrollBar();
+        bar->setValue(bar->value() + (key == Qt::Key_PageUp ? -m_rows : m_rows));
+        return;
+    }
+
+    QByteArray out;
+    switch (key) {
+    case Qt::Key_Return: case Qt::Key_Enter: out = "\r"; break;
+    case Qt::Key_Backspace: out = "\x7f"; break;
+    case Qt::Key_Tab: out = "\t"; break;
+    case Qt::Key_Backtab: out = "\x1b[Z"; break;
+    case Qt::Key_Escape: out = "\x1b"; break;
+    case Qt::Key_Up: out = "\x1b[A"; break;
+    case Qt::Key_Down: out = "\x1b[B"; break;
+    case Qt::Key_Right: out = ctrl ? "\x1b[1;5C" : "\x1b[C"; break;
+    case Qt::Key_Left: out = ctrl ? "\x1b[1;5D" : "\x1b[D"; break;
+    case Qt::Key_Home: out = "\x1b[H"; break;
+    case Qt::Key_End: out = "\x1b[F"; break;
+    case Qt::Key_Delete: out = "\x1b[3~"; break;
+    case Qt::Key_Insert: out = "\x1b[2~"; break;
+    case Qt::Key_PageUp: out = "\x1b[5~"; break;
+    case Qt::Key_PageDown: out = "\x1b[6~"; break;
+    default: {
+        const QString text = e->text();
+        if (!text.isEmpty() && text.at(0).unicode() >= 0x20 && text.at(0).unicode() != 0x7F) {
+            out = text.toUtf8();
+        } else if (ctrl && key >= Qt::Key_A && key <= Qt::Key_Z) {
+            out = QByteArray(1, char(key - Qt::Key_A + 1));
+        } else if (!text.isEmpty() && text.at(0).unicode() < 0x20) {
+            out = text.toUtf8();
+        } else {
+            QAbstractScrollArea::keyPressEvent(e);
+            return;
+        }
+        break;
+    }
+    }
+
+    if (alt && !out.isEmpty())
+        out.prepend('\x1b');
+    clearSelection();
+    m_stickToBottom = true;
+    updateScrollBar();
+    writeToPty(out);
+}
+
+void TerminalWidget::inputMethodEvent(QInputMethodEvent *e)
+{
+    if (!e->commitString().isEmpty())
+        writeToPty(e->commitString().toUtf8());
+    e->accept();
+}
+
+// ── Mouse / selection ─────────────────────────────────────────────────────────
+
+QPoint TerminalWidget::cellAt(const QPoint &pos) const
+{
+    const int col = qBound(0, pos.x() / m_cellW, m_cols - 1);
+    const int row = qBound(0, pos.y() / m_cellH, m_rows - 1);
+    return QPoint(col, int(verticalScrollBar()->value() + row + m_screen.droppedLines()));
+}
+
+void TerminalWidget::clearSelection()
+{
+    if (m_hasSelection) {
+        m_hasSelection = false;
+        viewport()->update();
+    }
+}
+
+void TerminalWidget::mousePressEvent(QMouseEvent *e)
+{
+    if (e->button() == Qt::LeftButton) {
+        m_selecting = true;
+        m_hasSelection = false;
+        m_selAnchor = m_selHead = cellAt(e->pos());
+        viewport()->update();
+    } else if (e->button() == Qt::MiddleButton && QApplication::clipboard()->supportsSelection()) {
+        writeToPty(QApplication::clipboard()->text(QClipboard::Selection).toUtf8());
+    }
+}
+
+void TerminalWidget::mouseMoveEvent(QMouseEvent *e)
+{
+    if (!m_selecting) return;
+    m_selHead = cellAt(e->pos());
+    m_hasSelection = m_selHead != m_selAnchor;
+    viewport()->update();
+}
+
+void TerminalWidget::mouseReleaseEvent(QMouseEvent *e)
+{
+    if (e->button() != Qt::LeftButton) return;
+    m_selecting = false;
+    if (m_hasSelection && QApplication::clipboard()->supportsSelection())
+        QApplication::clipboard()->setText(selectedText(), QClipboard::Selection);
+}
+
+QString TerminalWidget::selectedText() const
+{
+    if (!m_hasSelection) return QString();
+    QPoint a = m_selAnchor, b = m_selHead;
+    if (b.y() < a.y() || (b.y() == a.y() && b.x() < a.x()))
+        std::swap(a, b);
+
+    const qint64 dropped = m_screen.droppedLines();
+    QStringList lines;
+    for (qint64 abs = a.y(); abs <= b.y(); ++abs) {
+        const qint64 idx = abs - dropped;
+        if (idx < 0 || idx >= m_screen.lineCount()) continue;
+        const VtScreen::Line &l = m_screen.line(int(idx));
+        const int from = abs == a.y() ? a.x() : 0;
+        const int to = abs == b.y() ? b.x() : int(l.size()) - 1;
+        QString s;
+        for (int c = from; c <= to && c < l.size(); ++c)
+            s += QString::fromUcs4(&l.at(c).ch, 1);
+        while (s.endsWith(QLatin1Char(' ')))
+            s.chop(1);
+        lines << s;
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
+void TerminalWidget::wheelEvent(QWheelEvent *e)
+{
+    if (e->modifiers() & Qt::ControlModifier) {
+        const int dy = e->angleDelta().y();
+        if (dy != 0) emit fontSizeAdjustRequested(dy > 0 ? +1 : -1);
+        return;
+    }
+    QAbstractScrollArea::wheelEvent(e);
+}
 // ── Public API ────────────────────────────────────────────────────────────────
 
 void TerminalWidget::setArgs(const QStringList &args)
@@ -829,9 +1068,23 @@ void TerminalWidget::writeToShell(const QString &text)
     writeToPty(text.toUtf8());
 }
 
+// R's readline treats a raw Tab as "complete", which swallows the indentation
+// of submitted code. Prefix tabs with quoted-insert (Ctrl+V) so they reach R
+// as literal tabs. The Windows console host has no readline, so it is skipped.
+static QString preserveTabs(const QString &code)
+{
+#ifdef Q_OS_WIN
+    return code;
+#else
+    QString out = code;
+    out.replace(QLatin1Char('\t'), QStringLiteral("\x16\t"));
+    return out;
+#endif
+}
+
 void TerminalWidget::executeCommand(const QString &command)
 {
-    writeToPty((command + "\r").toUtf8());
+    writeToPty((preserveTabs(command) + "\r").toUtf8());
 }
 
 void TerminalWidget::executeCommandSilent(const QString &command)
@@ -839,7 +1092,7 @@ void TerminalWidget::executeCommandSilent(const QString &command)
     if (command.isEmpty())
         return;
     QString pid     = QString::number(QCoreApplication::applicationPid());
-    QString tmpPath = QDir::tempPath() + "/rgui2_cmd_" + pid + ".R";
+    QString tmpPath = QDir::tempPath() + "/simpler_cmd_" + pid + ".R";
     QFile f(tmpPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
         writeToPtySilent((command + "\r").toUtf8());
@@ -866,7 +1119,7 @@ void TerminalWidget::executeCommandSilent(const QString &command)
 
 void TerminalWidget::executeRCode(const QString &code)
 {
-    writeToPty((code + "\r").toUtf8());
+    writeToPty((preserveTabs(code) + "\r").toUtf8());
 }
 
 // ── Context menu ──────────────────────────────────────────────────────────────
@@ -878,7 +1131,8 @@ void TerminalWidget::contextMenuEvent(QContextMenuEvent *event)
     QAction *copy = menu->addAction(tr("Copy"));
     copy->setShortcut(QKeySequence("Ctrl+Shift+C"));
     connect(copy, &QAction::triggered, this,
-            [this]() { page()->triggerAction(QWebEnginePage::Copy); });
+            [this]() { QApplication::clipboard()->setText(selectedText()); });
+    copy->setEnabled(m_hasSelection);
 
     QAction *paste = menu->addAction(tr("Paste"));
     paste->setShortcut(QKeySequence("Ctrl+Shift+V"));

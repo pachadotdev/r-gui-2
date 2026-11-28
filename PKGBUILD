@@ -1,7 +1,7 @@
-pkgname=r-gui-2
+pkgname=simpler
 pkgver=0.3.0
 pkgrel=1
-pkgdesc="R GUI 2 - Made with Qt"
+pkgdesc="Simpler - Made with Qt"
 arch=('x86_64')
 url="https://github.com/yourusername/r-gui-2"
 license=('Apache-2.0')
@@ -43,13 +43,13 @@ package() {
     cd "${startdir}/build"
     
     # Install the binary
-    install -Dm755 bin/q "${pkgdir}/usr/bin/q"
+    install -Dm755 bin/simpler "${pkgdir}/usr/bin/simpler"
     
     # Install desktop file
-    install -Dm644 "${startdir}/q.desktop" "${pkgdir}/usr/share/applications/q.desktop"
+    install -Dm644 "${startdir}/simpler.desktop" "${pkgdir}/usr/share/applications/simpler.desktop"
     
     # Install icon (if exists)
-    if [ -f "${startdir}/q.png" ]; then
-        install -Dm644 "${startdir}/q.png" "${pkgdir}/usr/share/pixmaps/q.png"
+    if [ -f "${startdir}/simpler.png" ]; then
+        install -Dm644 "${startdir}/simpler.png" "${pkgdir}/usr/share/pixmaps/simpler.png"
     fi
 }

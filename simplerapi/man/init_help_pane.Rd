@@ -19,7 +19,7 @@ init_help_pane(port_file, queue_file, url_file, interval = 0.15)
 
 \description{
 Starts the dynamic help server, writes its port to \code{port_file}, and
-begins polling \code{queue_file} for help-topic requests from the Q IDE
+begins polling \code{queue_file} for help-topic requests from the Simpler
 frontend. Each line in \code{queue_file} is treated as a topic; the
 resulting URL is written to \code{url_file}. Polling is done via
 \code{later::later()} so it runs in R's idle event loop and produces

@@ -20,17 +20,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # -- 2. Qt6 + WebEngine (MSVC build from Qt's official mirrors) --------
-      # Qt WebEngine requires MSVC on Windows (Chromium is MSVC-only).
-      # aqtinstall provides pre-built binaries matching the official Qt installer.
-      - name: Install Qt6 with WebEngine
+      # -- 2. Qt6 (MSVC build from Qt's official mirrors) --------------------
+      # Only Qt Base is needed (no WebEngine), which keeps the installer small.
+      - name: Install Qt6
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.3'
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          modules: 'qtwebengine qtwebchannel qtpositioning'
 
       # -- 3. MSVC x64 developer environment --------------------------------
       - name: Set up MSVC
@@ -49,11 +47,11 @@ jobs:
           $pngs  = @()
           foreach ($s in $sizes) {
             $p = "$env:TEMP\icon_$s.png"
-            magick -background none r-gui-2-logo.svg -resize "${s}x${s}" $p
+            magick -background none simpler-logo.svg -resize "${s}x${s}" $p
             $pngs += $p
           }
-          & magick $pngs src\r-gui-2.ico
-          Copy-Item src\r-gui-2.ico installer\r-gui-2.ico
+          & magick $pngs src\simpler.ico
+          Copy-Item src\simpler.ico installer\simpler.ico
 
       # -- 5. Derive version string ------------------------------------------
       - name: Compute version
@@ -76,10 +74,11 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path installer\staging | Out-Null
-          Copy-Item build\bin\rgui2.exe installer\staging\
+          Copy-Item build\bin\simpler.exe installer\staging\
 
-          # Collect all Qt6 and plugin DLLs next to the executable.
-          windeployqt6 --release --compiler-runtime --dir installer\staging installer\staging\rgui2.exe
+          # Collect only the Qt DLLs/plugins the app uses (no translations, no
+          # software OpenGL, no D3D compiler) to keep the installer small.
+          windeployqt6 --release --compiler-runtime --no-translations --no-opengl-sw --no-system-d3d-compiler --no-system-dxc-compiler --skip-plugin-types qmltooling,generic,networkinformation,tls --dir installer\staging installer\staging\simpler.exe
 
       - name: Download Visual C++ Redistributable
         shell: pwsh
@@ -92,17 +91,17 @@ jobs:
         run: |
           Copy-Item -Recurse gogh-themes  installer\staging\gogh-themes
           Copy-Item -Recurse fonts        installer\staging\fonts
-          Copy-Item -Recurse rgui2pkg     installer\staging\rgui2pkg
+          Copy-Item -Recurse simplerapi     installer\staging\simplerapi
 
-      - name: Build rgui2 R package tarball
+      - name: Build simplerapi R package tarball
         shell: pwsh
         run: |
-          R.exe CMD build rgui2pkg --no-manual
-          $tarball = Get-ChildItem rgui2_*.tar.gz | Select-Object -First 1
+          R.exe CMD build simplerapi --no-manual
+          $tarball = Get-ChildItem simplerapi_*.tar.gz | Select-Object -First 1
           if (-not $tarball) {
             Write-Error "R package tarball was not created"; exit 1
           }
-          Copy-Item $tarball.FullName installer\staging\rgui2pkg.tar.gz
+          Copy-Item $tarball.FullName installer\staging\simplerapi.tar.gz
 
       - name: Pre-install R packages for bundling
         shell: pwsh
@@ -129,20 +128,15 @@ jobs:
           & $rscript --vanilla -e "install.packages('jsonlite', lib='$rLibraryR', repos='https://cloud.r-project.org', type='win.binary')"
           if ($LASTEXITCODE -ne 0) { Write-Error "jsonlite install failed"; exit 1 }
 
-          # Cairo provides the non-interactive PNG device used by rgui2 on Windows.
-          Write-Host "Installing Cairo..."
-          & $rscript --vanilla -e "install.packages('Cairo', lib='$rLibraryR', repos='https://cloud.r-project.org', type='win.binary')"
-          if ($LASTEXITCODE -ne 0) { Write-Error "Cairo install failed"; exit 1 }
-
-          # Install rgui2 from source into the same staging library.
-          Write-Host "Installing rgui2..."
-          $tarball = (Join-Path $PWD "installer\staging\rgui2pkg.tar.gz") -replace '\\', '/'
+          # Install simplerapi from source into the same staging library.
+          Write-Host "Installing simplerapi..."
+          $tarball = (Join-Path $PWD "installer\staging\simplerapi.tar.gz") -replace '\\', '/'
           $tarballR = $tarball.Replace("'", "\'")
           & $rscript --vanilla -e "install.packages('$tarballR', lib='$rLibraryR', repos=NULL, type='source')"
-          if ($LASTEXITCODE -ne 0) { Write-Error "rgui2 install failed"; exit 1 }
+          if ($LASTEXITCODE -ne 0) { Write-Error "simplerapi install failed"; exit 1 }
 
           # Verify both package trees before NSIS packages them.
-          foreach ($pkg in @("jsonlite", "Cairo", "rgui2")) {
+          foreach ($pkg in @("jsonlite", "simplerapi")) {
             $src = Join-Path $rLibrary $pkg
             if (Test-Path $src) {
               Write-Host "Staged: $pkg"
@@ -169,8 +163,8 @@ jobs:
       - name: Upload installer as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: R-GUI-2-${{ steps.version.outputs.version }}-Windows
-          path: installer\R-GUI-2-*-Setup.exe
+          name: Simpler-${{ steps.version.outputs.version }}-Windows
+          path: installer\Simpler-*-Setup.exe
           if-no-files-found: error
 
       - name: Upload installer to GitHub release
@@ -180,4 +174,4 @@ jobs:
         run: |
           ver="${{ inputs.version }}"
           tag="v${ver}"
-          gh release upload "${tag}" installer/R-GUI-2-*-Setup.exe --clobber
+          gh release upload "${tag}" installer/Simpler-*-Setup.exe --clobber

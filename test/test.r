@@ -7,3 +7,9 @@ y <- 1
 iris$Sepal.Length
 
 tinyplot::tinyplot(Sepal.Length ~ Petal.Length | Species, data = iris)
+
+iris$Sepal.Length |>
+ mean()
+
+iris$Sepal.Length |>
+	mean()

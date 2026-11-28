@@ -1,9 +1,5 @@
 <RCC>
-  <qresource prefix="/xterm">
-    <file alias="xterm.js">xterm/xterm.js</file>
-    <file alias="xterm.css">xterm/xterm.css</file>
-    <file alias="addon-fit.js">xterm/addon-fit.js</file>
-    <file alias="terminal.html">xterm/terminal.html</file>
+  <qresource prefix="/fonts">
     <file alias="hack-regular.ttf">../fonts/hack/Hack-Regular.ttf</file>
     <file alias="hack-bold.ttf">../fonts/hack/Hack-Bold.ttf</file>
     <file alias="hack-italic.ttf">../fonts/hack/Hack-Italic.ttf</file>
