@@ -18,6 +18,7 @@
 #include <QMenu>
 #include <QFileInfo>
 #include <QTimer>
+#include <QProcess>
 #include <QStandardPaths>
 #include <QDir>
 #include <QSplitter>
@@ -269,49 +270,61 @@ void MainWindow::createMenus()
     makeFontSC(QKeySequence(Qt::CTRL | Qt::Key_Minus),  -1);
     makeFontSC(QKeySequence(Qt::CTRL | Qt::Key_0),       0);
     QMenu *terminalMenuBar = menuBar()->addMenu(tr("&Terminal"));
-    struct ShellEntry { QString path; QString label; };
-    QList<ShellEntry> shellCandidates = {
-        {"/bin/zsh",                                                  "zsh"},
-        {"/usr/bin/zsh",                                              "zsh"},
-        {"/bin/bash",                                                 "bash"},
-        {"/usr/bin/bash",                                             "bash"},
-        {"/bin/sh",                                                   "sh"},
-        {"/usr/bin/sh",                                               "sh"},
-        {"/usr/bin/fish",                                             "fish"},
-        {"/bin/fish",                                                 "fish"},
-        {"/opt/homebrew/bin/zsh",                                     "zsh"},
-        {"/usr/local/bin/zsh",                                        "zsh"},
-        {"/usr/bin/pwsh",                                             "PowerShell"},
-        {"/usr/local/bin/pwsh",                                       "PowerShell"},
-        {"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", "PowerShell"},
-        {"C:/Program Files/PowerShell/7/pwsh.exe",                   "PowerShell"},
-        {"C:/msys64/usr/bin/bash.exe",                                "MSYS2 bash"},
-        {"C:/msys64/mingw64/bin/bash.exe",                            "MSYS2 bash"},
-    };
-    QStringList addedLabels;
-    for (const ShellEntry &entry : shellCandidates) {
-        if (QFile::exists(entry.path) && !addedLabels.contains(entry.label)) {
-            QAction *shellAction = terminalMenuBar->addAction(tr("New %1 terminal").arg(entry.label));
-            connect(shellAction, &QAction::triggered, this, [this, entry]() {
-                TerminalWidget *terminal = new TerminalWidget(entry.path, this);
-                if (!m_currentDir.isEmpty())
-                    terminal->setWorkingDirectory(m_currentDir);
-                connect(terminal, &TerminalWidget::fontSizeAdjustRequested,
-                        this,     &MainWindow::adjustAllTerminalFontSize);
-                // Start this terminal at the current global font size.
-                terminal->setInitialFontSize(m_globalFontSize);
-                int index = consoleTabs->addTab(terminal, entry.label);
-                consoleTabs->setCurrentIndex(index);
-            });
-            addedLabels << entry.label;
-        }
-    }
+    QAction *openTermAct = terminalMenuBar->addAction(tr("Open System Terminal"));
+    connect(openTermAct, &QAction::triggered, this, &MainWindow::openSystemTerminal);
 
     // Help menu
     helpMenu = menuBar()->addMenu(tr("&Help"));
     QAction *aboutAct = new QAction(tr("&About"), this);
     connect(aboutAct, &QAction::triggered, this, &MainWindow::about);
     helpMenu->addAction(aboutAct);
+}
+
+void MainWindow::openSystemTerminal()
+{
+    const QString dir = m_currentDir.isEmpty() ? QDir::homePath() : m_currentDir;
+    bool started = false;
+
+#if defined(Q_OS_MACOS)
+    started = QProcess::startDetached("open", {"-a", "Terminal", dir});
+#elif defined(Q_OS_WIN)
+    if (!QStandardPaths::findExecutable("wt.exe").isEmpty())
+        started = QProcess::startDetached("wt.exe", {"-d", QDir::toNativeSeparators(dir)});
+    if (!started) {
+        QProcess p;
+        p.setProgram("cmd.exe");
+        p.setNativeArguments("/c start cmd.exe");
+        p.setWorkingDirectory(dir);
+        started = p.startDetached();
+    }
+#else
+    struct Term { QString exe; QStringList args; };
+    QList<Term> terms;
+    const QString envTerm = qEnvironmentVariable("TERMINAL");
+    if (!envTerm.isEmpty())
+        terms.append({envTerm, {}});
+    terms.append({
+        {"x-terminal-emulator", {}},
+        {"gnome-terminal", {"--working-directory=" + dir}},
+        {"konsole", {"--workdir", dir}},
+        {"xfce4-terminal", {"--working-directory=" + dir}},
+        {"kitty", {"--directory", dir}},
+        {"alacritty", {"--working-directory", dir}},
+        {"xterm", {}},
+    });
+    for (const Term &t : terms) {
+        if (QStandardPaths::findExecutable(t.exe).isEmpty())
+            continue;
+        if (QProcess::startDetached(t.exe, t.args, dir)) {
+            started = true;
+            break;
+        }
+    }
+#endif
+
+    if (!started)
+        QMessageBox::warning(this, tr("Open System Terminal"),
+                             tr("Could not find a terminal application to launch."));
 }
 
 void MainWindow::setupConnections()

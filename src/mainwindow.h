@@ -41,6 +41,7 @@ private slots:
 private:
     void createMenus();
     void setupConnections();
+    void openSystemTerminal();
     void loadSettings();
     void saveSettings();
     void closeEvent(QCloseEvent *event) override;

@@ -1068,9 +1068,23 @@ void TerminalWidget::writeToShell(const QString &text)
     writeToPty(text.toUtf8());
 }
 
+// R's readline treats a raw Tab as "complete", which swallows the indentation
+// of submitted code. Prefix tabs with quoted-insert (Ctrl+V) so they reach R
+// as literal tabs. The Windows console host has no readline, so it is skipped.
+static QString preserveTabs(const QString &code)
+{
+#ifdef Q_OS_WIN
+    return code;
+#else
+    QString out = code;
+    out.replace(QLatin1Char('\t'), QStringLiteral("\x16\t"));
+    return out;
+#endif
+}
+
 void TerminalWidget::executeCommand(const QString &command)
 {
-    writeToPty((command + "\r").toUtf8());
+    writeToPty((preserveTabs(command) + "\r").toUtf8());
 }
 
 void TerminalWidget::executeCommandSilent(const QString &command)
@@ -1105,7 +1119,7 @@ void TerminalWidget::executeCommandSilent(const QString &command)
 
 void TerminalWidget::executeRCode(const QString &code)
 {
-    writeToPty((code + "\r").toUtf8());
+    writeToPty((preserveTabs(code) + "\r").toUtf8());
 }
 
 // ── Context menu ──────────────────────────────────────────────────────────────
